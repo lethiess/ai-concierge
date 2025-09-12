@@ -9,3 +9,9 @@ dependencies = [
     "openai>=1.107.2",
     "openai-agents[voice]>=0.3.0",
 ]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.8.0",
+    "pre-commit>=4.0.0",
+]
