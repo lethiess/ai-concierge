@@ -8,15 +8,9 @@ from agents import Runner
 from concierge.agents import (
     create_orchestrator_agent,
     create_reservation_agent,
-    create_voice_agent,
     format_reservation_result,
 )
-from concierge.agents.tools import (
-    end_call,
-    find_restaurant,
-    get_call_status,
-    make_call,
-)
+from concierge.agents.tools import find_restaurant
 from concierge.config import get_config, setup_logging
 from concierge.guardrails.input_validator import (
     input_validation_guardrail,
@@ -35,14 +29,11 @@ class ConciergeCLI:
         self.config = get_config()
         setup_logging(self.config)
 
-        # Create the 3-tier agent architecture:
-        # Orchestrator → Reservation Agent → Voice Agent
+        # Create the 2-tier agent architecture:
+        # Orchestrator → Reservation Agent (which triggers realtime voice calls)
 
-        # Tier 3: Voice Agent (makes actual calls)
-        voice_agent = create_voice_agent(make_call, get_call_status, end_call)
-
-        # Tier 2: Reservation Agent (handles reservation logic)
-        reservation_agent = create_reservation_agent(voice_agent, find_restaurant)
+        # Tier 2: Reservation Agent (handles reservation logic + voice calls)
+        reservation_agent = create_reservation_agent(find_restaurant)
 
         # Tier 1: Orchestrator (routes requests)
         self.orchestrator = create_orchestrator_agent(reservation_agent)
@@ -54,7 +45,7 @@ class ConciergeCLI:
             output_validation_guardrail,
         ]
 
-        logger.info("AI Concierge CLI initialized with 3-tier agent architecture")
+        logger.info("AI Concierge CLI initialized with realtime voice capabilities")
 
         # Display configuration status
         self._display_config_status()
@@ -63,7 +54,7 @@ class ConciergeCLI:
         """Display configuration status to the user."""
         print("\n" + "=" * 60)
         print("AI CONCIERGE - Restaurant Reservation System")
-        print("Powered by OpenAI Agents SDK")
+        print("Powered by OpenAI Agents SDK + Realtime API")
         print("=" * 60)
 
         print("\nConfiguration Status:")
@@ -80,7 +71,8 @@ class ConciergeCLI:
             print("and TWILIO_PHONE_NUMBER in your .env file.")
 
         print("\nAgent Architecture:")
-        print("  Orchestrator → Reservation Agent → Voice Agent")
+        print("  Orchestrator → Reservation Agent → Realtime Voice Call")
+        print("  (Uses OpenAI Realtime API for natural phone conversations)")
 
         print("\n" + "=" * 60 + "\n")
 

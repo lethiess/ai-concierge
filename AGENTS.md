@@ -1,19 +1,40 @@
 # AI Concierge Agent Architecture
 
-This document describes the agent architecture for the AI Concierge restaurant reservation system, built with the [OpenAI Agents SDK](https://github.com/openai/openai-agents-python).
+This document describes the agent architecture for the AI Concierge restaurant reservation system, built with the [OpenAI Agents SDK](https://github.com/openai/openai-agents-python) and [Realtime API](https://openai.github.io/openai-agents-python/realtime/guide/).
 
 ## Overview
 
-The AI Concierge uses a **3-tier multi-agent architecture** with handoffs to handle restaurant reservations end-to-end:
+The AI Concierge uses a **2-tier agent architecture** with realtime voice capabilities for making actual phone calls to restaurants:
 
 ```
-User Input → Orchestrator → Reservation Agent → Voice Agent → Reservation Result
+User Input (Text) → Orchestrator → Reservation Agent → Realtime Voice Call → Restaurant
 ```
 
-This architecture allows for:
-- **Extensibility**: Easy to add new capabilities (cancellations, queries, etc.)
-- **Separation of concerns**: Each agent has a specific responsibility
-- **Intelligent routing**: Orchestrator routes to the appropriate specialized agent
+Key features:
+- **Intelligent Routing**: Orchestrator analyzes intent and routes to specialized agents
+- **Structured Data Extraction**: Reservation agent parses and validates booking details  
+- **Real-time Voice Conversations**: Uses OpenAI Realtime API for natural phone calls
+- **Twilio Integration**: Connects actual phone calls via Twilio Media Streams
+
+## Architecture Flow
+
+### 1. Text Input Processing (CLI)
+User provides reservation request via command line interface (text input)
+
+### 2. Orchestrator Agent (Tier 1)
+Analyzes request intent and routes to appropriate specialized agent
+
+### 3. Reservation Agent (Tier 2)
+- Parses reservation details using LLM
+- Looks up restaurant information
+- Validates constraints
+- Triggers realtime voice call
+
+### 4. Realtime Voice Call
+- Uses OpenAI **RealtimeAgent** for natural voice conversation
+- Connects via **Twilio Media Streams** for actual phone calls
+- Full-duplex audio streaming (bidirectional)
+- Real-time conversation with restaurant staff
 
 ## Agents
 
@@ -36,8 +57,6 @@ This architecture allows for:
 - `Reservation Agent`: For booking/making reservations
 - Future: Additional specialized agents
 
-**Output Type**: Delegated to specialized agents
-
 ### 2. Reservation Agent (Tier 2)
 
 **Role**: Reservation workflow manager
@@ -47,85 +66,102 @@ This architecture allows for:
 - Extract structured information (restaurant, party size, date, time, etc.)
 - Look up restaurant information using tools
 - Validate constraints (party size 1-50, all required fields present)
-- Hand off to Voice Agent for call execution
+- **Trigger realtime voice call** via `initiate_reservation_call` tool
 
 **Tools**:
-- `find_restaurant`: Look up restaurant by name
-
-**Handoffs**:
-- `Voice Agent`: For making the actual reservation call
+- `find_restaurant`: Look up restaurant by name and phone number
+- `initiate_reservation_call`: Trigger realtime voice call to restaurant
 
 **Output Type**: `ReservationDetails` (structured Pydantic model)
 
-### 3. Voice Agent (Tier 3)
+**Note**: This agent does NOT hand off to another agent. Instead, it uses a tool that triggers a realtime voice call outside the agent loop.
 
-**Role**: Voice conversation executor
+### 3. Realtime Voice Agent (OpenAI Realtime API)
+
+**Role**: Conduct real-time voice conversations
+
+**Implementation**: Uses `RealtimeAgent` from the SDK, not a regular `Agent`
 
 **Responsibilities**:
-- Initiate outbound calls to restaurants via Twilio
-- Conduct natural voice conversations
-- Provide all reservation details to restaurant
-- Obtain confirmation numbers
-- Handle edge cases (voicemail, unavailable times)
-- Return structured results
+- Conduct natural voice conversation with restaurant staff
+- Request reservation with all details (date, time, party size, name)
+- Handle dynamic responses and interruptions
+- Ask about alternative times if needed
+- Obtain confirmation number
+- Handle voicemail scenarios gracefully
 
-**Tools**:
-- `make_call`: Initiate a phone call
-- `get_call_status`: Check call status
-- `end_call`: End active calls
+**Configuration**:
+- Model: `gpt-4o-realtime-preview-2024-10-01`
+- Voice: Configurable (alloy, echo, fable, onyx, nova, shimmer)
+- Audio Format: PCM16 for Twilio compatibility
+- Temperature: 0.8 for natural conversation
 
-**Output Type**: `ReservationResult` (structured Pydantic model)
-
-## Agent Handoff Flow
-
-```mermaid
-graph LR
-    A[User Input] --> B[Orchestrator Agent]
-    B -->|Reservation Request| C[Reservation Agent]
-    B -->|Future: Cancellation| D[Cancellation Agent]
-    B -->|Future: Query| E[Query Agent]
-    C -->|Make Call| F[Voice Agent]
-    F --> G[Reservation Result]
-    
-    style B fill:#e1f5ff
-    style C fill:#fff3e1
-    style F fill:#e8f5e9
-```
+**Integration**: 
+- **Twilio Media Streams**: WebSocket connection for bidirectional audio
+- **RealtimeRunner**: Manages the agent session
+- **Audio Streaming**: Twilio ↔ WebSocket ↔ RealtimeAgent
 
 ## Function Tools
 
 All tools are decorated with `@function_tool` from the Agents SDK:
 
-### Restaurant Tools
+### Restaurant Tool
 
 ```python
 @function_tool
 def find_restaurant(restaurant_name: str) -> dict:
-    """Find a restaurant by name."""
+    """Find a restaurant by name and get phone number."""
 ```
 
-### Twilio/Voice Tools
+### Reservation Tool (Inside Reservation Agent)
 
 ```python
 @function_tool
-def make_call(
-    phone_number: str,
+async def initiate_reservation_call(
     restaurant_name: str,
+    restaurant_phone: str,
     party_size: int,
     date: str,
     time: str,
     customer_name: str | None = None,
     special_requests: str | None = None,
 ) -> dict:
-    """Initiate a phone call to make a reservation."""
+    """Initiate a real-time voice call to make the restaurant reservation."""
+```
 
-@function_tool
-def get_call_status(call_sid: str) -> dict:
-    """Get the status of an ongoing call."""
+## Realtime Voice Call Architecture
 
-@function_tool
-def end_call(call_sid: str) -> dict:
-    """End an active call."""
+```
+┌─────────────────┐
+│  User (CLI)     │
+│  Text Request   │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│  Orchestrator   │
+│  Agent          │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│  Reservation    │
+│  Agent          │
+│  (Parses data)  │
+└────────┬────────┘
+         │
+         │ initiate_reservation_call()
+         ▼
+┌─────────────────────────────────────────────┐
+│  Realtime Voice Call                        │
+│  ┌─────────┐   ┌──────────┐   ┌──────────┐ │
+│  │ Twilio  │──▶│WebSocket │──▶│ Realtime │ │
+│  │  Call   │   │  Server  │   │  Agent   │ │
+│  │         │◀──│          │◀──│          │ │
+│  └─────────┘   └──────────┘   └──────────┘ │
+│                                             │
+│  Restaurant ←─── Audio ────→ OpenAI        │
+└─────────────────────────────────────────────┘
 ```
 
 ## Guardrails
@@ -171,9 +207,9 @@ result = Runner.run_sync(
 4. Orchestrator hands off to Reservation Agent
 5. Reservation Agent extracts reservation details using LLM
 6. Reservation Agent uses `find_restaurant` tool to get restaurant info
-7. Reservation Agent hands off to Voice Agent
-8. Voice Agent uses `make_call` tool
-9. Voice Agent returns structured `ReservationResult`
+7. Reservation Agent calls `initiate_reservation_call` tool
+8. **Outside agent loop**: Realtime voice call is made
+9. Voice call result is returned to Reservation Agent
 10. Guardrails validate output
 11. Final output returned to user
 
@@ -196,18 +232,90 @@ ReservationDetails(
 )
 
 # 4. Reservation Agent uses find_restaurant tool
-# 5. Reservation Agent hands off to Voice Agent
-# 6. Voice Agent calls make_call tool
-# 7. Voice Agent returns:
-ReservationResult(
-    status="confirmed",
-    restaurant_name="Demo Restaurant",
-    confirmation_number="DEMO-12345",
-    message="Reservation confirmed...",
-    call_duration=45.0
+# Returns: {"name": "Demo Restaurant", "phone_number": "+1234567890", ...}
+
+# 5. Reservation Agent calls initiate_reservation_call tool
+# This triggers:
+
+# 6. Create RealtimeAgent with conversation context
+voice_agent = RealtimeAgent(
+    name="Restaurant Reservation Voice Agent",
+    instructions="Call Demo Restaurant to book 4 people at 7pm tomorrow...",
+    voice="alloy",
 )
 
-# 8. Result returned through the chain to user
+# 7. Connect Twilio call to WebSocket
+# 8. Stream audio bidirectionally: Restaurant ↔ Twilio ↔ WebSocket ↔ RealtimeAgent
+# 9. Conduct natural voice conversation
+# 10. Extract confirmation number from conversation
+
+# 11. Return result:
+{
+    "success": True,
+    "status": "confirmed",
+    "confirmation_number": "ABC123",
+    "message": "Reservation confirmed...",
+    "call_duration": 45.2
+}
+
+# 12. Result flows back through agent chain to user
+```
+
+## Twilio Media Streams Integration
+
+For production deployment, the system requires:
+
+1. **Twilio Account** with Media Streams capability
+2. **WebSocket Server** to handle Twilio ↔ RealtimeAgent communication
+3. **TwiML** configuration to route calls to WebSocket
+4. **Audio Format Handling**:
+   - Twilio uses 8kHz mulaw audio
+   - RealtimeAgent uses PCM16
+   - Conversion handled in WebSocket server
+5. **Call Management**:
+   - Track call state (initiated, ringing, answered, completed)
+   - Handle interruptions and errors
+   - Extract structured data from conversation
+
+## Key Benefits of This Architecture
+
+1. **Natural Conversations**: RealtimeAgent enables human-like phone calls
+2. **Real-time Processing**: Full-duplex audio for immediate responses
+3. **Modularity**: Orchestrator can route to different specialized agents
+4. **Extensibility**: Easy to add cancellation, query, modification agents
+5. **Structured Outputs**: Pydantic models ensure data validation
+6. **Intelligent Routing**: Orchestrator handles different request types
+
+## Key Benefits of Using Agents SDK + Realtime API
+
+1. **Structured Outputs**: Automatic validation with Pydantic models
+2. **Agent Handoffs**: Clean delegation between specialized agents
+3. **Function Tools**: Type-safe tool definitions
+4. **Built-in Guardrails**: Extensible validation framework
+5. **Tracing**: Automatic debugging and monitoring
+6. **Realtime Voice**: Natural, low-latency conversations
+7. **Provider Agnostic**: Works with OpenAI and 100+ LLMs via LiteLLM
+
+## Configuration
+
+Agents are configured in `concierge/config.py`:
+
+```python
+agent_model: str = "gpt-4o"  # For text agents
+realtime_model: str = "gpt-4o-realtime-preview-2024-10-01"  # For voice
+```
+
+## Testing
+
+Tests verify agent creation and tool functionality:
+
+```python
+def test_create_voice_agent():
+    reservation_details = {...}
+    voice_agent = create_voice_agent(reservation_details)
+    
+    assert isinstance(voice_agent, RealtimeAgent)
+    assert "restaurant_name" in voice_agent.instructions
 ```
 
 ## Future Extensibility
@@ -219,7 +327,7 @@ The orchestrator pattern makes it easy to add new capabilities:
 cancellation_agent = Agent(
     name="Cancellation Agent",
     instructions="Handle reservation cancellations...",
-    tools=[find_reservation, cancel_reservation],
+    tools=[find_reservation, cancel_via_call],
 )
 
 orchestrator = create_orchestrator_agent(
@@ -228,66 +336,11 @@ orchestrator = create_orchestrator_agent(
 )
 ```
 
-### Query Agent
-```python
-query_agent = Agent(
-    name="Query Agent",
-    instructions="Answer questions about reservations...",
-    tools=[find_reservation, get_restaurant_info],
-)
-
-orchestrator = create_orchestrator_agent(
-    reservation_agent,
-    cancellation_agent,
-    query_agent,  # New!
-)
-```
-
-## Key Benefits of This Architecture
-
-1. **Modularity**: Each agent has a single, well-defined responsibility
-2. **Extensibility**: Easy to add new capabilities without modifying existing agents
-3. **Maintainability**: Clear separation of concerns
-4. **Testability**: Each agent can be tested independently
-5. **Scalability**: Agents can be optimized or replaced individually
-6. **Intelligent Routing**: Orchestrator provides smart request routing
-
-## Key Benefits of Using Agents SDK
-
-1. **Structured Outputs**: Automatic validation with Pydantic models
-2. **Agent Handoffs**: Clean delegation between specialized agents
-3. **Function Tools**: Type-safe tool definitions with automatic schema generation
-4. **Built-in Guardrails**: Extensible input/output validation framework
-5. **Tracing**: Automatic tracing for debugging and monitoring
-6. **Provider Agnostic**: Works with OpenAI and 100+ other LLMs via LiteLLM
-
-## Configuration
-
-Agents are configured in `concierge/config.py`:
-
-```python
-agent_model: str = "gpt-4o"
-agent_temperature: float = 0.7
-```
-
-## Testing
-
-Tests verify the full agent chain:
-
-```python
-def test_agent_handoff_chain():
-    voice_agent = create_voice_agent(...)
-    reservation_agent = create_reservation_agent(voice_agent, find_restaurant)
-    orchestrator = create_orchestrator_agent(reservation_agent)
-    
-    # Verify the handoff chain
-    assert reservation_agent in orchestrator.handoffs
-    assert voice_agent in reservation_agent.handoffs
-```
-
 ## References
 
 - [OpenAI Agents SDK](https://github.com/openai/openai-agents-python)
-- [Documentation](https://openai.github.io/openai-agents-python/)
-- [Handoffs Example](https://github.com/openai/openai-agents-python/blob/main/examples/handoffs/message_filter.py)
+- [Realtime API Guide](https://openai.github.io/openai-agents-python/realtime/guide/)
+- [Voice Examples](https://github.com/openai/openai-agents-python/tree/main/examples/voice)
+- [SDK Documentation](https://openai.github.io/openai-agents-python/)
 - [Guardrails Documentation](https://openai.github.io/openai-agents-python/guardrails/)
+- [Twilio Media Streams](https://www.twilio.com/docs/voice/twiml/stream)
