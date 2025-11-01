@@ -1,147 +1,86 @@
-"""Tests for agent modules."""
+"""Tests for AI Concierge agents using OpenAI Agents SDK."""
 
-import pytest
-from unittest.mock import patch
+from agents import Agent
 
-from concierge.agents.triage_agent import TriageAgent
-from concierge.agents.voice_agent import VoiceAgent
-from concierge.models import (
-    ReservationRequest,
-    ReservationResult,
-    ReservationStatus,
-    Restaurant,
+from concierge.agents import (
+    create_triage_agent,
+    create_voice_agent,
+    end_call,
+    find_restaurant,
+    get_call_status,
+    make_call,
 )
 
 
-class TestTriageAgent:
-    """Tests for the TriageAgent."""
+class TestAgentCreation:
+    """Tests for agent creation using the SDK."""
 
-    @pytest.fixture
-    def triage_agent(self):
-        """Create a triage agent for testing."""
-        return TriageAgent()
+    def test_create_voice_agent(self):
+        """Test voice agent creation."""
+        voice_agent = create_voice_agent(make_call, get_call_status, end_call)
 
-    def test_parse_request_valid_input(self, triage_agent):
-        """Test parsing a valid reservation request."""
-        user_input = "Book a table at Demo Restaurant for 4 people tomorrow at 7pm"
+        assert isinstance(voice_agent, Agent)
+        assert voice_agent.name == "Voice Reservation Agent"
+        assert len(voice_agent.tools) == 3
 
-        with patch.object(triage_agent, "_parse_request") as mock_parse:
-            mock_parse.return_value = {
-                "restaurant_name": "Demo Restaurant",
-                "party_size": 4,
-                "date": "tomorrow",
-                "time": "7pm",
-            }
+    def test_create_triage_agent(self):
+        """Test triage agent creation with handoff."""
+        voice_agent = create_voice_agent(make_call, get_call_status, end_call)
+        triage_agent = create_triage_agent(voice_agent, find_restaurant)
 
-            result = triage_agent.process_user_request(user_input)
+        assert isinstance(triage_agent, Agent)
+        assert triage_agent.name == "Reservation Triage Agent"
+        assert len(triage_agent.handoffs) == 1
+        assert len(triage_agent.tools) == 1
 
-            assert result["success"] is True
-            assert result["request"].restaurant_name == "Demo Restaurant"
-            assert result["request"].party_size == 4
+    def test_agent_handoff_relationship(self):
+        """Test that triage agent has voice agent as handoff."""
+        voice_agent = create_voice_agent(make_call, get_call_status, end_call)
+        triage_agent = create_triage_agent(voice_agent, find_restaurant)
 
-    def test_invalid_input_empty(self, triage_agent):
-        """Test handling of empty input."""
-        result = triage_agent.process_user_request("")
+        assert voice_agent in triage_agent.handoffs
+
+
+class TestTools:
+    """Tests for function tools."""
+
+    def test_find_restaurant_success(self):
+        """Test finding a restaurant that exists."""
+        result = find_restaurant("Demo Restaurant")
+
+        assert result["success"] is True
+        assert "restaurant" in result
+        assert result["restaurant"]["name"] == "Demo Restaurant"
+
+    def test_find_restaurant_not_found(self):
+        """Test finding a restaurant that doesn't exist."""
+        result = find_restaurant("Nonexistent Restaurant")
+
         assert result["success"] is False
-        assert "empty" in result["error"].lower()
+        assert "error" in result
 
-    def test_invalid_party_size(self, triage_agent):
-        """Test handling of invalid party size."""
-        user_input = "Book a table for 100 people"
-
-        with patch.object(triage_agent, "_parse_request") as mock_parse:
-            mock_parse.return_value = {
-                "restaurant_name": "Demo Restaurant",
-                "party_size": 100,  # Exceeds maximum
-                "date": "tomorrow",
-                "time": "7pm",
-            }
-
-            result = triage_agent.process_user_request(user_input)
-
-            assert result["success"] is False
-            assert "party size" in result["error"].lower()
-
-    def test_format_result_confirmed(self, triage_agent):
-        """Test formatting a confirmed reservation result."""
-        restaurant = Restaurant(
-            name="Test Restaurant",
+    def test_make_call_simulated(self):
+        """Test making a call when Twilio is not configured."""
+        result = make_call(
             phone_number="+1234567890",
-        )
-
-        request = ReservationRequest(
             restaurant_name="Test Restaurant",
             party_size=4,
-            date="2024-12-01",
-            time="7:00 PM",
+            date="tomorrow",
+            time="7pm",
         )
 
-        result = ReservationResult(
-            status=ReservationStatus.CONFIRMED,
-            restaurant=restaurant,
-            request=request,
-            confirmation_number="TEST123",
-            message="Reservation confirmed",
-        )
+        assert result["success"] is True
+        assert "call_sid" in result
 
-        formatted = triage_agent.format_result(result)
+    def test_get_call_status_simulated(self):
+        """Test getting call status for simulated call."""
+        result = get_call_status("SIMULATED")
 
-        assert "CONFIRMED" in formatted
-        assert "Test Restaurant" in formatted
-        assert "TEST123" in formatted
+        assert result["success"] is True
+        assert result["status"] == "completed"
 
+    def test_end_call_simulated(self):
+        """Test ending a simulated call."""
+        result = end_call("SIMULATED")
 
-class TestVoiceAgent:
-    """Tests for the VoiceAgent."""
-
-    @pytest.fixture
-    def voice_agent(self):
-        """Create a voice agent for testing."""
-        return VoiceAgent()
-
-    @pytest.mark.asyncio
-    async def test_simulate_call(self, voice_agent):
-        """Test simulated call when Twilio is not configured."""
-        restaurant = Restaurant(
-            name="Test Restaurant",
-            phone_number="+1234567890",
-        )
-
-        request = ReservationRequest(
-            restaurant_name="Test Restaurant",
-            party_size=4,
-            date="2024-12-01",
-            time="7:00 PM",
-        )
-
-        # Mock Twilio as not configured
-        voice_agent.twilio_service.client = None
-
-        result = await voice_agent.make_reservation_call(request, restaurant)
-
-        assert result.status == ReservationStatus.CONFIRMED
-        assert "SIMULATED" in result.message
-        assert result.confirmation_number is not None
-
-    def test_build_system_prompt(self, voice_agent):
-        """Test system prompt generation."""
-        restaurant = Restaurant(
-            name="Test Restaurant",
-            phone_number="+1234567890",
-        )
-
-        request = ReservationRequest(
-            restaurant_name="Test Restaurant",
-            party_size=4,
-            date="2024-12-01",
-            time="7:00 PM",
-            user_name="John Doe",
-        )
-
-        prompt = voice_agent._build_system_prompt(request, restaurant)
-
-        assert "Test Restaurant" in prompt
-        assert "4 people" in prompt
-        assert "2024-12-01" in prompt
-        assert "7:00 PM" in prompt
-        assert "John Doe" in prompt
+        assert result["success"] is True

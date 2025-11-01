@@ -1,17 +1,28 @@
-"""Input validation guardrails."""
+"""Input validation guardrails using OpenAI Agents SDK."""
 
 import logging
 import re
-from typing import ClassVar
+
+from agents import GuardrailFunctionOutput, InputGuardrail
 
 logger = logging.getLogger(__name__)
 
 
-class InputValidator:
-    """Validates user input for security and abuse prevention."""
+def input_validation_function(
+    _context, _agent, user_input: str
+) -> GuardrailFunctionOutput:
+    """Validate user input for security and abuse prevention.
 
+    Args:
+        context: The guardrail context
+        agent: The agent being run
+        user_input: Raw user input string
+
+    Returns:
+        GuardrailFunctionOutput indicating if validation passed
+    """
     # Patterns that indicate potential abuse or inappropriate content
-    BLOCKED_PATTERNS: ClassVar[list[str]] = [
+    blocked_patterns = [
         r"<script",
         r"javascript:",
         r"onclick",
@@ -21,83 +32,82 @@ class InputValidator:
     ]
 
     # Extremely long inputs may indicate abuse
-    MAX_INPUT_LENGTH: ClassVar[int] = 1000
+    max_input_length = 1000
 
-    # Minimum and maximum party sizes that make sense
-    MIN_PARTY_SIZE: ClassVar[int] = 1
-    MAX_PARTY_SIZE: ClassVar[int] = 50
+    # Check for empty input
+    if not user_input or not user_input.strip():
+        logger.warning("Empty input detected")
+        return GuardrailFunctionOutput(
+            output_info="Input cannot be empty. Please provide a reservation request.",
+            tripwire_triggered=True,
+        )
 
-    @classmethod
-    def validate_user_input(cls, user_input: str) -> tuple[bool, str | None]:
-        """Validate raw user input from CLI.
+    # Check input length
+    if len(user_input) > max_input_length:
+        logger.warning(f"Input too long: {len(user_input)} characters")
+        return GuardrailFunctionOutput(
+            output_info=f"Input too long (max {max_input_length} characters). Please shorten your request.",
+            tripwire_triggered=True,
+        )
 
-        Args:
-            user_input: Raw user input string
+    # Check for suspicious patterns
+    user_input_lower = user_input.lower()
+    for pattern in blocked_patterns:
+        if re.search(pattern, user_input_lower):
+            logger.warning(f"Blocked pattern detected: {pattern}")
+            return GuardrailFunctionOutput(
+                output_info="Input contains suspicious content. Please rephrase your request.",
+                tripwire_triggered=True,
+            )
 
-        Returns:
-            Tuple of (is_valid, error_message)
-            If valid, error_message is None
-            If invalid, error_message contains the reason
-        """
-        if not user_input or not user_input.strip():
-            return False, "Input cannot be empty"
+    # Input is valid
+    return GuardrailFunctionOutput(
+        output_info="Input validation passed",
+        tripwire_triggered=False,
+    )
 
-        if len(user_input) > cls.MAX_INPUT_LENGTH:
-            logger.warning(f"Input too long: {len(user_input)} characters")
-            return False, f"Input too long (max {cls.MAX_INPUT_LENGTH} characters)"
 
-        # Check for suspicious patterns
-        user_input_lower = user_input.lower()
-        for pattern in cls.BLOCKED_PATTERNS:
-            if re.search(pattern, user_input_lower):
-                logger.warning(f"Blocked pattern detected: {pattern}")
-                return False, "Input contains suspicious content"
+def party_size_validation_function(
+    _context, _agent, user_input: str
+) -> GuardrailFunctionOutput:
+    """Validate party size constraints.
 
-        return True, None
+    Args:
+        context: The guardrail context
+        agent: The agent being run
+        user_input: User input string
 
-    @classmethod
-    def validate_party_size(cls, party_size: int) -> tuple[bool, str | None]:
-        """Validate party size is reasonable.
+    Returns:
+        GuardrailFunctionOutput indicating if validation passed
+    """
+    # This is a simple check - the actual party size will be extracted by the agent
+    # We just check for obviously invalid values mentioned in the text
 
-        Args:
-            party_size: Number of people for reservation
+    # Look for numbers in the input
+    numbers = re.findall(r"\b\d+\b", user_input)
 
-        Returns:
-            Tuple of (is_valid, error_message)
-        """
-        if party_size < cls.MIN_PARTY_SIZE:
-            return False, f"Party size must be at least {cls.MIN_PARTY_SIZE}"
+    min_party_size = 1
+    max_party_size = 50
 
-        if party_size > cls.MAX_PARTY_SIZE:
-            return False, f"Party size cannot exceed {cls.MAX_PARTY_SIZE}"
+    for num_str in numbers:
+        num = int(num_str)
+        # If we find a number that looks like a party size but is invalid
+        if num < min_party_size or num > max_party_size:
+            logger.warning(f"Potentially invalid party size detected: {num}")
+            return GuardrailFunctionOutput(
+                output_info=f"Party size must be between {min_party_size} and {max_party_size} people.",
+                tripwire_triggered=True,
+            )
 
-        return True, None
+    return GuardrailFunctionOutput(
+        output_info="Party size validation passed",
+        tripwire_triggered=False,
+    )
 
-    @classmethod
-    def validate_phone_number(cls, phone: str) -> tuple[bool, str | None]:
-        """Validate phone number format.
 
-        Args:
-            phone: Phone number string
+# Create the guardrail instances
+input_validation_guardrail = InputGuardrail(
+    guardrail_function=input_validation_function
+)
 
-        Returns:
-            Tuple of (is_valid, error_message)
-        """
-        # Basic phone number validation - accepts various formats
-        # Remove common separators
-        cleaned = re.sub(r"[\s\-\(\)\.]", "", phone)
-
-        # Check if it's a valid international format (starts with +)
-        if cleaned.startswith("+"):
-            if len(cleaned) < 10 or len(cleaned) > 15:
-                return False, "Invalid phone number format"
-            if not cleaned[1:].isdigit():
-                return False, "Phone number must contain only digits after +"
-        else:
-            # Domestic format
-            if len(cleaned) < 10 or len(cleaned) > 11:
-                return False, "Invalid phone number format"
-            if not cleaned.isdigit():
-                return False, "Phone number must contain only digits"
-
-        return True, None
+party_size_guardrail = InputGuardrail(guardrail_function=party_size_validation_function)

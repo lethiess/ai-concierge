@@ -1,27 +1,48 @@
-"""Command-line interface for AI Concierge."""
+"""Command-line interface for AI Concierge using OpenAI Agents SDK."""
 
-import asyncio
 import logging
 import sys
 
-from concierge.agents.triage_agent import TriageAgent
-from concierge.agents.voice_agent import VoiceAgent
+from agents import Runner
+
+from concierge.agents.triage_agent import create_triage_agent, format_reservation_result
+from concierge.agents.tools import (
+    end_call,
+    find_restaurant,
+    get_call_status,
+    make_call,
+)
+from concierge.agents.voice_agent import create_voice_agent
 from concierge.config import get_config, setup_logging
+from concierge.guardrails.input_validator import (
+    input_validation_guardrail,
+    party_size_guardrail,
+)
+from concierge.guardrails.output_validator import output_validation_guardrail
 
 logger = logging.getLogger(__name__)
 
 
 class ConciergeCLI:
-    """Command-line interface for the AI Concierge system."""
+    """Command-line interface for the AI Concierge system using Agents SDK."""
 
     def __init__(self) -> None:
         """Initialize the CLI."""
         self.config = get_config()
         setup_logging(self.config)
-        self.triage_agent = TriageAgent()
-        self.voice_agent = VoiceAgent()
 
-        logger.info("AI Concierge CLI initialized")
+        # Create agents using the SDK
+        voice_agent = create_voice_agent(make_call, get_call_status, end_call)
+        self.triage_agent = create_triage_agent(voice_agent, find_restaurant)
+
+        # Add guardrails
+        self.triage_agent.guardrails = [
+            input_validation_guardrail,
+            party_size_guardrail,
+            output_validation_guardrail,
+        ]
+
+        logger.info("AI Concierge CLI initialized with Agents SDK")
 
         # Display configuration status
         self._display_config_status()
@@ -30,6 +51,7 @@ class ConciergeCLI:
         """Display configuration status to the user."""
         print("\n" + "=" * 60)
         print("AI CONCIERGE - Restaurant Reservation System")
+        print("Powered by OpenAI Agents SDK")
         print("=" * 60)
 
         print("\nConfiguration Status:")
@@ -70,7 +92,7 @@ class ConciergeCLI:
                     print("\nThank you for using AI Concierge. Goodbye!")
                     break
 
-                # Process the request
+                # Process the request using Agents SDK
                 self._process_request(user_input)
 
             except KeyboardInterrupt:
@@ -82,65 +104,44 @@ class ConciergeCLI:
                 print("Please try again or type 'quit' to exit.")
 
     def _process_request(self, user_input: str) -> None:
-        """Process a single reservation request.
+        """Process a single reservation request using the Agents SDK.
 
         Args:
             user_input: User's natural language request
         """
         print("\n" + "-" * 60)
-        print("Processing your request...")
-        print("-" * 60 + "\n")
-
-        # Step 1: Parse and validate with triage agent
-        result = self.triage_agent.process_user_request(user_input)
-
-        if not result["success"]:
-            print(f"⚠ {result['error']}")
-            print(f"(Error at stage: {result['stage']})")
-            return
-
-        # Extract parsed information
-        request = result["request"]
-        restaurant = result["restaurant"]
-
-        # Display parsed information
-        print("I understood your request as:")
-        print(f"  Restaurant: {restaurant.name}")
-        print(f"  Date: {request.date}")
-        print(f"  Time: {request.time}")
-        print(f"  Party size: {request.party_size} people")
-        if request.user_name:
-            print(f"  Name: {request.user_name}")
-        if request.special_requests:
-            print(f"  Special requests: {request.special_requests}")
-
-        print(f"\nRestaurant phone: {restaurant.phone_number}")
-
-        # Ask for confirmation
-        confirm = input("\nProceed with this reservation? (yes/no): ").strip().lower()
-
-        if confirm not in ["yes", "y"]:
-            print("Reservation cancelled.")
-            return
-
-        # Step 2: Make the call with voice agent
-        print("\n" + "-" * 60)
-        print("Initiating call to restaurant...")
+        print("Processing your request with AI agents...")
         print("-" * 60 + "\n")
 
         try:
-            # Run async call in sync context
-            reservation_result = asyncio.run(
-                self.voice_agent.make_reservation_call(request, restaurant)
+            # Run the triage agent using the SDK Runner
+            result = Runner.run_sync(
+                agent=self.triage_agent,
+                input=user_input,
             )
 
-            # Step 3: Display result
-            formatted_result = self.triage_agent.format_result(reservation_result)
-            print(formatted_result)
+            # Display the result
+            if hasattr(result, "final_output"):
+                print("\n✓ Reservation processed successfully!")
+                print(f"\nAgent response:\n{result.final_output}")
+            else:
+                print("\n✓ Request processed")
+                print(f"\nResult: {result}")
+
+            # Display formatted result if available
+            formatted = format_reservation_result(result)
+            print(f"\n{formatted}")
 
         except Exception as e:
-            logger.error(f"Error making reservation: {e}", exc_info=True)
-            print(f"\n⚠ Error making reservation: {e}")
+            logger.error(f"Error processing request: {e}", exc_info=True)
+            print(f"\n⚠ Error processing request: {e}")
+            print("\nPlease try again with a different request.")
+
+
+async def async_main() -> None:
+    """Async entry point for the CLI (if needed for async operations)."""
+    cli = ConciergeCLI()
+    cli.run()
 
 
 def main() -> None:

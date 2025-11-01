@@ -1,126 +1,126 @@
-"""Tests for guardrail modules."""
+"""Tests for guardrails using OpenAI Agents SDK."""
 
-from concierge.guardrails.input_validator import InputValidator
-from concierge.guardrails.output_validator import OutputValidator
+from agents import Agent, GuardrailFunctionOutput
+
+from concierge.guardrails import (
+    input_validation_guardrail,
+    output_validation_guardrail,
+    party_size_guardrail,
+)
 
 
-class TestInputValidator:
-    """Tests for the InputValidator."""
+class TestInputValidation:
+    """Tests for input validation guardrails."""
 
-    def test_validate_empty_input(self):
-        """Test validation of empty input."""
-        is_valid, error = InputValidator.validate_user_input("")
-        assert is_valid is False
-        assert "empty" in error.lower()
+    def test_valid_input(self):
+        """Test that valid input passes validation."""
+        agent = Agent(name="Test")
+        context = {}
+        user_input = "Book a table at Demo Restaurant for 4 people tomorrow at 7pm"
 
-    def test_validate_too_long_input(self):
-        """Test validation of excessively long input."""
-        long_input = "x" * 2000
-        is_valid, error = InputValidator.validate_user_input(long_input)
-        assert is_valid is False
-        assert "too long" in error.lower()
+        result = input_validation_guardrail.guardrail_function(
+            context, agent, user_input
+        )
 
-    def test_validate_suspicious_patterns(self):
-        """Test detection of suspicious patterns."""
+        assert isinstance(result, GuardrailFunctionOutput)
+        assert result.tripwire_triggered is False
+
+    def test_empty_input(self):
+        """Test that empty input fails validation."""
+        agent = Agent(name="Test")
+        context = {}
+        user_input = ""
+
+        result = input_validation_guardrail.guardrail_function(
+            context, agent, user_input
+        )
+
+        assert result.tripwire_triggered is True
+        assert "empty" in result.output_info.lower()
+
+    def test_too_long_input(self):
+        """Test that excessively long input fails validation."""
+        agent = Agent(name="Test")
+        context = {}
+        user_input = "x" * 1001  # Over the limit
+
+        result = input_validation_guardrail.guardrail_function(
+            context, agent, user_input
+        )
+
+        assert result.tripwire_triggered is True
+        assert "too long" in result.output_info.lower()
+
+    def test_suspicious_input(self):
+        """Test that suspicious patterns fail validation."""
+        agent = Agent(name="Test")
+        context = {}
         suspicious_inputs = [
-            "<script>alert('xss')</script>",
+            "Book a table <script>alert('xss')</script>",
             "javascript:void(0)",
-            "onclick='malicious()'",
+            "onclick=malicious()",
         ]
 
         for user_input in suspicious_inputs:
-            is_valid, error = InputValidator.validate_user_input(user_input)
-            assert is_valid is False
-            assert "suspicious" in error.lower()
+            result = input_validation_guardrail.guardrail_function(
+                context, agent, user_input
+            )
+            assert result.tripwire_triggered is True, f"Should block: {user_input}"
 
-    def test_validate_normal_input(self):
-        """Test validation of normal input."""
-        is_valid, error = InputValidator.validate_user_input(
-            "Book a table for 4 people at 7pm"
-        )
-        assert is_valid is True
-        assert error is None
 
-    def test_validate_party_size_valid(self):
-        """Test validation of valid party sizes."""
-        for size in [1, 5, 10, 20, 50]:
-            is_valid, error = InputValidator.validate_party_size(size)
-            assert is_valid is True
-            assert error is None
+class TestPartySizeValidation:
+    """Tests for party size validation guardrail."""
 
-    def test_validate_party_size_invalid(self):
-        """Test validation of invalid party sizes."""
-        # Too small
-        is_valid, _error = InputValidator.validate_party_size(0)
-        assert is_valid is False
-
-        # Too large
-        is_valid, _error = InputValidator.validate_party_size(100)
-        assert is_valid is False
-
-    def test_validate_phone_number_valid(self):
-        """Test validation of valid phone numbers."""
-        valid_numbers = [
-            "+1234567890",
-            "+441234567890",
-            "1234567890",
-            "(123) 456-7890",
-            "123-456-7890",
+    def test_valid_party_size(self):
+        """Test that valid party sizes pass."""
+        agent = Agent(name="Test")
+        context = {}
+        valid_inputs = [
+            "Book for 1 person",
+            "Reserve for 4 people",
+            "Table for 20",
         ]
 
-        for number in valid_numbers:
-            is_valid, error = InputValidator.validate_phone_number(number)
-            assert is_valid is True, f"Failed for {number}: {error}"
+        for user_input in valid_inputs:
+            result = party_size_guardrail.guardrail_function(context, agent, user_input)
+            assert result.tripwire_triggered is False, f"Should pass: {user_input}"
 
-    def test_validate_phone_number_invalid(self):
-        """Test validation of invalid phone numbers."""
-        invalid_numbers = [
-            "123",  # Too short
-            "+123abc456",  # Contains letters
-            "",  # Empty
+    def test_invalid_party_size(self):
+        """Test that invalid party sizes fail."""
+        agent = Agent(name="Test")
+        context = {}
+        invalid_inputs = [
+            "Book for 0 people",
+            "Reserve for 100 people",
+            "Table for 999",
         ]
 
-        for number in invalid_numbers:
-            is_valid, _error = InputValidator.validate_phone_number(number)
-            assert is_valid is False, f"Should have failed for {number}"
+        for user_input in invalid_inputs:
+            result = party_size_guardrail.guardrail_function(context, agent, user_input)
+            assert result.tripwire_triggered is True, f"Should fail: {user_input}"
 
 
-class TestOutputValidator:
-    """Tests for the OutputValidator."""
+class TestOutputValidation:
+    """Tests for output validation guardrails."""
 
-    def test_validate_safe_output(self):
-        """Test validation of safe output."""
-        safe_text = "Your reservation is confirmed for 4 people at 7pm"
-        is_safe, warnings = OutputValidator.validate_output(safe_text)
-        assert is_safe is True
-        assert len(warnings) == 0
+    def test_safe_output(self):
+        """Test that safe output passes validation."""
+        agent = Agent(name="Test")
+        context = {}
+        output = "Your reservation is confirmed for 4 people at 7pm."
 
-    def test_detect_api_key(self):
-        """Test detection of API keys."""
-        unsafe_text = "Here is your key: sk-" + "x" * 48
-        is_safe, warnings = OutputValidator.validate_output(unsafe_text)
-        assert is_safe is False
-        assert len(warnings) > 0
+        result = output_validation_guardrail.guardrail_function(context, agent, output)
 
-    def test_detect_long_token(self):
-        """Test detection of long tokens."""
-        unsafe_text = "Token: " + "A" * 25
-        is_safe, warnings = OutputValidator.validate_output(unsafe_text)
-        assert is_safe is False
-        assert len(warnings) > 0
+        assert isinstance(result, GuardrailFunctionOutput)
+        assert result.tripwire_triggered is False
 
-    def test_sanitize_api_key(self):
-        """Test sanitization of API keys."""
-        text = "Key: sk-" + "x" * 48
-        sanitized = OutputValidator.sanitize_output(text)
-        assert "sk-***REDACTED***" in sanitized
-        assert "sk-x" not in sanitized
+    def test_output_with_api_key(self):
+        """Test that output containing API keys fails validation."""
+        agent = Agent(name="Test")
+        context = {}
+        output = "Here is your key: sk-" + "x" * 48
 
-    def test_sanitize_dict(self):
-        """Test sanitization of dictionary outputs."""
-        data = {
-            "message": "Success",
-            "api_key": "sk-" + "x" * 48,
-        }
-        sanitized = OutputValidator.sanitize_output(data)
-        assert "sk-***REDACTED***" in sanitized["api_key"]
+        result = output_validation_guardrail.guardrail_function(context, agent, output)
+
+        assert result.tripwire_triggered is True
+        assert "API key" in result.output_info or "token" in result.output_info

@@ -1,17 +1,28 @@
-"""Output validation guardrails."""
+"""Output validation guardrails using OpenAI Agents SDK."""
 
 import logging
 import re
-from typing import Any, ClassVar
+
+from agents import GuardrailFunctionOutput, OutputGuardrail
 
 logger = logging.getLogger(__name__)
 
 
-class OutputValidator:
-    """Validates agent outputs to prevent leaking sensitive information."""
+def output_validation_function(
+    _context, _agent, output: str
+) -> GuardrailFunctionOutput:
+    """Validate agent output for sensitive information.
 
+    Args:
+        context: The guardrail context
+        agent: The agent being run
+        output: The output to validate
+
+    Returns:
+        GuardrailFunctionOutput indicating if validation passed
+    """
     # Patterns that might indicate sensitive information
-    SENSITIVE_PATTERNS: ClassVar[list[tuple[str, str]]] = [
+    sensitive_patterns = [
         (r"\b[A-Z0-9]{20,}\b", "API key or token"),
         (r"sk-[a-zA-Z0-9]{48}", "OpenAI API key"),
         (r"password\s*[:=]\s*\S+", "Password"),
@@ -20,48 +31,59 @@ class OutputValidator:
         (r"\b(?:\d{4}[-\s]?){3}\d{4}\b", "Credit card"),
     ]
 
-    @classmethod
-    def validate_output(cls, output: str) -> tuple[bool, list[str]]:
-        """Validate agent output for sensitive information.
+    warnings = []
 
-        Args:
-            output: The output text to validate
+    for pattern, description in sensitive_patterns:
+        if re.search(pattern, str(output), re.IGNORECASE):
+            logger.warning(f"Potential {description} detected in output")
+            warnings.append(f"Output may contain {description}")
 
-        Returns:
-            Tuple of (is_safe, warnings)
-            is_safe: True if output is safe, False if it contains sensitive data
-            warnings: List of warning messages about what was detected
-        """
-        warnings = []
+    if warnings:
+        return GuardrailFunctionOutput(
+            output_info=f"Security warning: {'; '.join(warnings)}. Output blocked.",
+            tripwire_triggered=True,
+        )
 
-        for pattern, description in cls.SENSITIVE_PATTERNS:
-            if re.search(pattern, output, re.IGNORECASE):
-                logger.warning(f"Potential {description} detected in output")
-                warnings.append(f"Output may contain {description}")
+    return GuardrailFunctionOutput(
+        output_info="Output validation passed",
+        tripwire_triggered=False,
+    )
 
-        is_safe = len(warnings) == 0
-        return is_safe, warnings
 
-    @classmethod
-    def sanitize_output(cls, output: Any) -> Any:
-        """Sanitize output by removing or masking sensitive information.
+def sanitize_output_function(_context, _agent, output: str) -> GuardrailFunctionOutput:
+    """Sanitize output by masking potential sensitive information.
 
-        Args:
-            output: The output to sanitize (string or dict)
+    Args:
+        context: The guardrail context
+        agent: The agent being run
+        output: The output to sanitize
 
-        Returns:
-            Sanitized version of the output
-        """
-        if isinstance(output, str):
-            # Mask potential API keys
-            sanitized = re.sub(r"sk-[a-zA-Z0-9]{48}", "sk-***REDACTED***", output)
-            # Mask long tokens
-            return re.sub(r"\b[A-Z0-9]{20,}\b", "***REDACTED***", sanitized)
+    Returns:
+        GuardrailFunctionOutput with sanitized output
+    """
+    if isinstance(output, str):
+        # Mask potential API keys
+        sanitized = re.sub(r"sk-[a-zA-Z0-9]{48}", "sk-***REDACTED***", output)
+        # Mask long tokens
+        sanitized = re.sub(r"\b[A-Z0-9]{20,}\b", "***REDACTED***", sanitized)
 
-        if isinstance(output, dict):
-            return {k: cls.sanitize_output(v) for k, v in output.items()}
+        return GuardrailFunctionOutput(
+            output_info="Output sanitized",
+            tripwire_triggered=False,
+            modified_output=sanitized,
+        )
 
-        if isinstance(output, list):
-            return [cls.sanitize_output(item) for item in output]
+    return GuardrailFunctionOutput(
+        output_info="No sanitization needed",
+        tripwire_triggered=False,
+    )
 
-        return output
+
+# Create the guardrail instances
+output_validation_guardrail = OutputGuardrail(
+    guardrail_function=output_validation_function
+)
+
+output_sanitization_guardrail = OutputGuardrail(
+    guardrail_function=sanitize_output_function
+)
