@@ -72,7 +72,9 @@ def create_reservation_agent(restaurant_lookup_tool) -> Agent:
             Dictionary with call initiation result
         """
         # Import here to avoid circular dependency
-        from concierge.agents.voice_agent import make_reservation_call_via_twilio
+        from concierge.agents.voice_agent import (
+            make_reservation_call_via_twilio,
+        )
 
         logger.info(f"Initiating realtime voice call to {restaurant_name}")
 

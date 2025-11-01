@@ -6,7 +6,6 @@ from datetime import datetime
 from agents.realtime import RealtimeAgent
 from pydantic import BaseModel
 
-from concierge.config import get_config
 from concierge.models import Restaurant
 from concierge.services.twilio_service import TwilioService
 
@@ -42,8 +41,6 @@ def create_voice_agent(reservation_details: dict) -> RealtimeAgent:
     Returns:
         Configured RealtimeAgent for conducting the reservation call
     """
-    config = get_config()
-
     # Extract reservation details
     restaurant_name = reservation_details.get("restaurant_name")
     party_size = reservation_details.get("party_size")
@@ -80,13 +77,11 @@ Customer name: {customer_name}
 Your goal is to successfully book the reservation or gather information about alternatives.
 """
 
+    # Create the RealtimeAgent with minimal configuration
+    # Full configuration (voice, temperature, etc.) is done via RealtimeRunner
     voice_agent = RealtimeAgent(
         name="Restaurant Reservation Voice Agent",
         instructions=instructions,
-        model=config.realtime_model,
-        # Voice configuration for natural conversation
-        voice="alloy",  # You can customize: alloy, echo, fable, onyx, nova, shimmer
-        temperature=0.8,  # Slightly higher for more natural conversation
     )
 
     logger.info(f"Realtime voice agent created for calling {restaurant_name}")

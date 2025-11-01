@@ -1,4 +1,4 @@
-"""Orchestrator/Triage agent that routes requests to specialized agents using OpenAI Agents SDK."""
+"""Orchestrator agent that routes requests to specialized agents using OpenAI Agents SDK."""
 
 import logging
 
@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 def create_orchestrator_agent(*specialized_agents: Agent) -> Agent:
-    """Create the orchestrator/triage agent that routes to specialized agents.
+    """Create the orchestrator agent that routes to specialized agents.
 
     This is the main entry point for all user requests. It analyzes the intent
     and routes to the appropriate specialized agent.
