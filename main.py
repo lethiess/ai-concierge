@@ -1,11 +1,17 @@
-import os
-from agents import set_default_openai_key
+import logging
 
-set_default_openai_key(os.getenv("OPENAI_API_KEY"))
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+
+logger = logging.getLogger(__name__)
 
 
 def main():
-    print("Hello from concierce!")
+    logger.info("Hello from AI-Concierge!")
 
 
 if __name__ == "__main__":
