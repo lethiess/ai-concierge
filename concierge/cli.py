@@ -5,14 +5,18 @@ import sys
 
 from agents import Runner
 
-from concierge.agents.triage_agent import create_triage_agent, format_reservation_result
+from concierge.agents import (
+    create_orchestrator_agent,
+    create_reservation_agent,
+    create_voice_agent,
+    format_reservation_result,
+)
 from concierge.agents.tools import (
     end_call,
     find_restaurant,
     get_call_status,
     make_call,
 )
-from concierge.agents.voice_agent import create_voice_agent
 from concierge.config import get_config, setup_logging
 from concierge.guardrails.input_validator import (
     input_validation_guardrail,
@@ -31,18 +35,26 @@ class ConciergeCLI:
         self.config = get_config()
         setup_logging(self.config)
 
-        # Create agents using the SDK
-        voice_agent = create_voice_agent(make_call, get_call_status, end_call)
-        self.triage_agent = create_triage_agent(voice_agent, find_restaurant)
+        # Create the 3-tier agent architecture:
+        # Orchestrator → Reservation Agent → Voice Agent
 
-        # Add guardrails
-        self.triage_agent.guardrails = [
+        # Tier 3: Voice Agent (makes actual calls)
+        voice_agent = create_voice_agent(make_call, get_call_status, end_call)
+
+        # Tier 2: Reservation Agent (handles reservation logic)
+        reservation_agent = create_reservation_agent(voice_agent, find_restaurant)
+
+        # Tier 1: Orchestrator (routes requests)
+        self.orchestrator = create_orchestrator_agent(reservation_agent)
+
+        # Add guardrails to the orchestrator
+        self.orchestrator.guardrails = [
             input_validation_guardrail,
             party_size_guardrail,
             output_validation_guardrail,
         ]
 
-        logger.info("AI Concierge CLI initialized with Agents SDK")
+        logger.info("AI Concierge CLI initialized with 3-tier agent architecture")
 
         # Display configuration status
         self._display_config_status()
@@ -67,11 +79,14 @@ class ConciergeCLI:
             print("To enable real calls, set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN,")
             print("and TWILIO_PHONE_NUMBER in your .env file.")
 
+        print("\nAgent Architecture:")
+        print("  Orchestrator → Reservation Agent → Voice Agent")
+
         print("\n" + "=" * 60 + "\n")
 
     def run(self) -> None:
         """Run the CLI application."""
-        print("Welcome! I can help you make restaurant reservations.\n")
+        print("Welcome! I can help you with restaurant reservations.\n")
         print("Examples:")
         print('  "Book a table at Demo Restaurant for 4 people tomorrow at 7pm"')
         print('  "Reserve 2 seats at Mario\'s Pizza on Friday at 6:30 PM"')
@@ -92,7 +107,7 @@ class ConciergeCLI:
                     print("\nThank you for using AI Concierge. Goodbye!")
                     break
 
-                # Process the request using Agents SDK
+                # Process the request through the orchestrator
                 self._process_request(user_input)
 
             except KeyboardInterrupt:
@@ -104,25 +119,28 @@ class ConciergeCLI:
                 print("Please try again or type 'quit' to exit.")
 
     def _process_request(self, user_input: str) -> None:
-        """Process a single reservation request using the Agents SDK.
+        """Process a single request using the orchestrator.
+
+        The orchestrator will route to the appropriate specialized agent.
 
         Args:
             user_input: User's natural language request
         """
         print("\n" + "-" * 60)
-        print("Processing your request with AI agents...")
+        print("Processing your request through AI Concierge...")
         print("-" * 60 + "\n")
 
         try:
-            # Run the triage agent using the SDK Runner
+            # Run the orchestrator using the SDK Runner
+            # The orchestrator will route to the appropriate agent
             result = Runner.run_sync(
-                agent=self.triage_agent,
+                agent=self.orchestrator,
                 input=user_input,
             )
 
             # Display the result
             if hasattr(result, "final_output"):
-                print("\n✓ Reservation processed successfully!")
+                print("\n✓ Request processed successfully!")
                 print(f"\nAgent response:\n{result.final_output}")
             else:
                 print("\n✓ Request processed")
@@ -136,12 +154,6 @@ class ConciergeCLI:
             logger.error(f"Error processing request: {e}", exc_info=True)
             print(f"\n⚠ Error processing request: {e}")
             print("\nPlease try again with a different request.")
-
-
-async def async_main() -> None:
-    """Async entry point for the CLI (if needed for async operations)."""
-    cli = ConciergeCLI()
-    cli.run()
 
 
 def main() -> None:

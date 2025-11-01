@@ -3,7 +3,8 @@
 from agents import Agent
 
 from concierge.agents import (
-    create_triage_agent,
+    create_orchestrator_agent,
+    create_reservation_agent,
     create_voice_agent,
     end_call,
     find_restaurant,
@@ -23,22 +24,44 @@ class TestAgentCreation:
         assert voice_agent.name == "Voice Reservation Agent"
         assert len(voice_agent.tools) == 3
 
-    def test_create_triage_agent(self):
-        """Test triage agent creation with handoff."""
+    def test_create_reservation_agent(self):
+        """Test reservation agent creation with handoff to voice agent."""
         voice_agent = create_voice_agent(make_call, get_call_status, end_call)
-        triage_agent = create_triage_agent(voice_agent, find_restaurant)
+        reservation_agent = create_reservation_agent(voice_agent, find_restaurant)
 
-        assert isinstance(triage_agent, Agent)
-        assert triage_agent.name == "Reservation Triage Agent"
-        assert len(triage_agent.handoffs) == 1
-        assert len(triage_agent.tools) == 1
+        assert isinstance(reservation_agent, Agent)
+        assert reservation_agent.name == "Reservation Agent"
+        assert len(reservation_agent.handoffs) == 1
+        assert len(reservation_agent.tools) == 1
 
-    def test_agent_handoff_relationship(self):
-        """Test that triage agent has voice agent as handoff."""
+    def test_create_orchestrator_agent(self):
+        """Test orchestrator agent creation with specialized agents."""
         voice_agent = create_voice_agent(make_call, get_call_status, end_call)
-        triage_agent = create_triage_agent(voice_agent, find_restaurant)
+        reservation_agent = create_reservation_agent(voice_agent, find_restaurant)
+        orchestrator = create_orchestrator_agent(reservation_agent)
 
-        assert voice_agent in triage_agent.handoffs
+        assert isinstance(orchestrator, Agent)
+        assert orchestrator.name == "AI Concierge Orchestrator"
+        assert len(orchestrator.handoffs) == 1
+
+    def test_agent_handoff_chain(self):
+        """Test the full agent handoff chain: Orchestrator → Reservation → Voice."""
+        voice_agent = create_voice_agent(make_call, get_call_status, end_call)
+        reservation_agent = create_reservation_agent(voice_agent, find_restaurant)
+        orchestrator = create_orchestrator_agent(reservation_agent)
+
+        # Verify the handoff chain
+        assert reservation_agent in orchestrator.handoffs
+        assert voice_agent in reservation_agent.handoffs
+
+    def test_multiple_specialized_agents(self):
+        """Test orchestrator with multiple specialized agents."""
+        voice_agent = create_voice_agent(make_call, get_call_status, end_call)
+        reservation_agent = create_reservation_agent(voice_agent, find_restaurant)
+        # In the future, we might have cancellation_agent, query_agent, etc.
+        orchestrator = create_orchestrator_agent(reservation_agent)
+
+        assert len(orchestrator.handoffs) >= 1
 
 
 class TestTools:

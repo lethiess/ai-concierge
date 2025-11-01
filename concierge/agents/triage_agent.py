@@ -1,75 +1,64 @@
-"""Triage/Orchestrator agent using OpenAI Agents SDK."""
+"""Orchestrator/Triage agent that routes requests to specialized agents using OpenAI Agents SDK."""
 
 import logging
-from typing import Any
 
 from agents import Agent
-from pydantic import BaseModel
 
 from concierge.config import get_config
 
 logger = logging.getLogger(__name__)
 
 
-class ReservationDetails(BaseModel):
-    """Structured output for parsed reservation request."""
+def create_orchestrator_agent(*specialized_agents: Agent) -> Agent:
+    """Create the orchestrator/triage agent that routes to specialized agents.
 
-    restaurant_name: str
-    party_size: int
-    date: str
-    time: str
-    user_name: str | None = None
-    user_phone: str | None = None
-    special_requests: str | None = None
-
-
-def create_triage_agent(voice_agent: Agent, restaurant_lookup_tool) -> Agent:
-    """Create the triage agent with handoff to voice agent.
+    This is the main entry point for all user requests. It analyzes the intent
+    and routes to the appropriate specialized agent.
 
     Args:
-        voice_agent: The voice agent to hand off to
-        restaurant_lookup_tool: The restaurant lookup function tool
+        *specialized_agents: Variable number of specialized agents to route to
 
     Returns:
-        Configured triage agent
+        Configured orchestrator agent
     """
     config = get_config()
 
-    triage_agent = Agent(
-        name="Reservation Triage Agent",
+    orchestrator_agent = Agent(
+        name="AI Concierge Orchestrator",
         model=config.agent_model,
-        instructions="""You are a restaurant reservation assistant. Your role is to:
+        instructions="""You are the AI Concierge orchestrator. Your role is to understand user requests
+and route them to the appropriate specialized agent.
 
-1. Parse the user's reservation request and extract:
-   - Restaurant name
-   - Party size (number of people)
-   - Date of reservation
-   - Time of reservation
-   - Customer name (if provided)
-   - Customer phone (if provided)
-   - Any special requests
+Current capabilities:
+- **Reservation Requests**: For booking/making restaurant reservations
+  Examples: "Book a table", "Make a reservation", "Reserve a table"
+  → Hand off to the Reservation Agent
 
-2. Validate the information:
-   - Party size must be between 1 and 50 people
-   - All required fields must be present (restaurant, party size, date, time)
+Future capabilities (not yet implemented):
+- Cancellation requests → Hand off to Cancellation Agent
+- Modification requests → Hand off to Modification Agent
+- Query requests → Hand off to Query Agent
 
-3. Look up the restaurant using the find_restaurant tool
+**Important Instructions:**
+1. Analyze the user's request to determine their intent
+2. If it's a reservation request, hand off to the Reservation Agent
+3. If the request type is not yet supported, politely inform the user
+4. Be friendly, professional, and concise
+5. Don't try to handle the request yourself - always delegate to specialized agents
 
-4. Once you have validated the reservation details and found the restaurant,
-   hand off to the Voice Agent to make the actual reservation call.
-
-Be polite, concise, and ask for missing information if needed.
+When you identify a reservation request, immediately hand off to the Reservation Agent.
+Don't ask for details yourself - let the specialized agent handle that.
 """,
-        tools=[restaurant_lookup_tool],
-        handoffs=[voice_agent],
-        output_type=ReservationDetails,
+        handoffs=list(specialized_agents),
     )
 
-    logger.info("Triage agent created")
-    return triage_agent
+    logger.info(
+        "Orchestrator agent created with %d specialized agents", len(specialized_agents)
+    )
+    return orchestrator_agent
 
 
-def format_reservation_result(result: Any) -> str:
+def format_reservation_result(result) -> str:
     """Format a reservation result for display to the user.
 
     Args:
