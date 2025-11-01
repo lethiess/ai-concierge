@@ -22,6 +22,8 @@ AI Concierge is an MVP demonstration of a multi-agent system that:
 
 ## Architecture
 
+The system uses a **3-tier agent architecture** with a separate WebSocket server for real-time voice:
+
 ```
 ┌─────────────┐
 │  CLI Input  │
@@ -29,29 +31,50 @@ AI Concierge is an MVP demonstration of a multi-agent system that:
        │
        ▼
 ┌─────────────────────┐
-│  Triage Agent       │  ← Parses request, validates input
-│  (Orchestrator)     │    Looks up restaurant
+│ Orchestrator Agent  │  ← Routes requests to specialized agents
 └──────┬──────────────┘
        │
        ▼
 ┌─────────────────────┐
-│  Voice Agent        │  ← Makes phone call via Twilio
-│  (Realtime)         │    Conducts reservation conversation
+│ Reservation Agent   │  ← Parses details, validates, triggers call
 └──────┬──────────────┘
        │
        ▼
 ┌─────────────────────┐
-│  Result Display     │  ← Formatted confirmation
-└─────────────────────┘
+│   Voice Agent       │  ← Creates call, initiates Twilio
+└──────┬──────────────┘
+       │
+       ▼
+┌─────────────────────┐     ┌─────────────────────┐
+│  FastAPI Server     │────▶│  Twilio Media       │
+│  (WebSocket)        │     │  Streams            │
+└──────┬──────────────┘     └──────┬──────────────┘
+       │                            │
+       ▼                            ▼
+┌─────────────────────┐     ┌─────────────────────┐
+│  RealtimeAgent      │────▶│   Restaurant        │
+│  (OpenAI)           │     │   Phone Call        │
+└─────────────────────┘     └─────────────────────┘
 ```
 
 ### Components
 
-- **Triage Agent**: Orchestrates workflow, parses requests, validates input
-- **Voice Agent**: Makes phone calls using OpenAI Realtime API + Twilio
+#### Agents (OpenAI Agents SDK)
+- **Orchestrator Agent**: Routes requests to specialized agents based on intent
+- **Reservation Agent**: Parses reservation details and manages the booking workflow
+- **Voice Agent (RealtimeAgent)**: Conducts natural voice conversations in real-time
+
+#### Services
+- **FastAPI Server**: WebSocket server for Twilio Media Streams integration
+- **CallManager**: Tracks call state, transcripts, and confirmation numbers
+- **AudioConverter**: Converts between Twilio (mulaw 8kHz) and OpenAI (PCM16 24kHz)
 - **Restaurant Service**: Mock service that returns demo restaurant data
-- **Guardrails**: Input/output validation for security
+- **Twilio Service**: Initiates calls and manages Twilio integration
+
+#### Infrastructure
+- **Guardrails**: Input and output validation using SDK guardrails
 - **CLI**: Terminal-based user interface
+- **WebSocket Bridge**: Bidirectional audio streaming between Twilio and OpenAI
 
 ## Setup
 
@@ -59,7 +82,8 @@ AI Concierge is an MVP demonstration of a multi-agent system that:
 
 - Python 3.13+
 - OpenAI API key
-- (Optional) Twilio account with phone number
+- (Optional) Twilio account with phone number for real calls
+- (Optional) ngrok for local development with Twilio webhooks
 
 ### Installation
 
@@ -75,11 +99,29 @@ uv sync --extra dev
 
 3. Configure environment variables:
 ```bash
-# Copy the template
-cp ENV_TEMPLATE.txt .env
+# Create .env file with your credentials
+cat > .env << EOF
+# Required
+OPENAI_API_KEY=sk-your-api-key-here
 
-# Edit .env and add your credentials
-# At minimum, set OPENAI_API_KEY
+# Optional - for real calls
+TWILIO_ACCOUNT_SID=ACxxxxx
+TWILIO_AUTH_TOKEN=xxxxx
+TWILIO_PHONE_NUMBER=+1xxxxx
+
+# Optional - for WebSocket server
+SERVER_HOST=0.0.0.0
+SERVER_PORT=8080
+PUBLIC_DOMAIN=  # Your ngrok domain (set after starting ngrok)
+
+# Voice configuration
+REALTIME_VOICE=alloy
+
+# Demo configuration
+DEMO_RESTAURANT_NAME=Demo Restaurant
+DEMO_RESTAURANT_PHONE=+1234567890
+LOG_LEVEL=INFO
+EOF
 ```
 
 ### Environment Variables
@@ -99,11 +141,45 @@ cp ENV_TEMPLATE.txt .env
 
 ## Usage
 
-### Starting the Application
+### Quick Start (Simulation Mode)
+
+For testing without Twilio, just run the CLI:
 
 ```bash
 python -m concierge
 ```
+
+This will simulate calls without making real phone calls.
+
+### Full Setup (Real Calls)
+
+For actual phone calls, you need to run both the server and CLI:
+
+**Terminal 1 - Start the WebSocket Server:**
+```bash
+python -m concierge.server
+# Or use the helper script:
+bash scripts/start_server.sh
+```
+
+**Terminal 2 - Start ngrok (for local development):**
+```bash
+ngrok http 8080
+```
+
+Copy the ngrok domain (e.g., `abc123.ngrok.io`) and add it to your `.env`:
+```bash
+PUBLIC_DOMAIN=abc123.ngrok.io
+```
+
+Restart the server to pick up the new configuration.
+
+**Terminal 3 - Run the CLI:**
+```bash
+python -m concierge
+```
+
+See [docs/deployment.md](docs/deployment.md) for detailed setup instructions.
 
 ### Example Interactions
 
@@ -161,6 +237,69 @@ pytest --cov=concierge
 
 ## Development
 
+### Running the WebSocket Server
+
+For real-time voice calls, you need to run the WebSocket server:
+
+```bash
+# Start the server
+python -m concierge.server
+
+# Or use the helper script
+bash scripts/start_server.sh
+```
+
+The server provides these endpoints:
+- `GET /health` - Health check
+- `GET /metrics` - Server metrics
+- `GET /calls` - List all calls
+- `GET /calls/{call_id}/status` - Get call status
+- `POST /twiml?call_id={id}` - Generate TwiML for Twilio
+- `WebSocket /media-stream?call_id={id}` - Media stream handler
+
+See [docs/deployment.md](docs/deployment.md) for detailed setup with ngrok.
+
+### Agent Visualization
+
+Visualize your agent architecture:
+
+```bash
+# Install visualization dependencies
+pip install "openai-agents[viz]"
+```
+
+```python
+from agents.extensions.visualization import draw_graph
+from concierge.agents.orchestrator_agent import create_orchestrator_agent
+from concierge.agents.reservation_agent import create_reservation_agent
+
+reservation_agent = create_reservation_agent()
+orchestrator = create_orchestrator_agent(reservation_agent)
+
+# Generate and display graph
+draw_graph(orchestrator)
+
+# Or save to file
+draw_graph(orchestrator, filename="agent_architecture").view()
+```
+
+This generates a visual graph showing agents (yellow), tools (green), and handoffs (arrows).
+
+See [Agent Visualization guide](https://openai.github.io/openai-agents-python/visualization/) for details.
+
+### Tracing and Monitoring
+
+The SDK includes [built-in tracing](https://openai.github.io/openai-agents-python/tracing/) (enabled by default):
+
+- View traces at [OpenAI Traces dashboard](https://platform.openai.com/traces)
+- Automatic tracing of agent runs, tool calls, handoffs, and guardrails
+- Add custom traces with `from agents import trace`
+
+To disable tracing:
+```bash
+export OPENAI_AGENTS_DISABLE_TRACING=1
+```
+
 ### Code Style
 
 The project follows PEP8 standards with Ruff for linting:
@@ -182,20 +321,34 @@ ruff check --fix .
 ai-concierge/
 ├── concierge/              # Main package
 │   ├── agents/            # Agent implementations
-│   │   ├── triage_agent.py
-│   │   └── voice_agent.py
+│   │   ├── orchestrator_agent.py  # Routes requests
+│   │   ├── reservation_agent.py   # Parses details
+│   │   ├── voice_agent.py         # Real-time calls
+│   │   └── tools.py               # Function tools
 │   ├── services/          # External service integrations
-│   │   ├── restaurant_service.py
-│   │   └── twilio_service.py
+│   │   ├── audio_converter.py     # Audio format conversion
+│   │   ├── call_manager.py        # Call state tracking
+│   │   ├── restaurant_service.py  # Restaurant lookup
+│   │   └── twilio_service.py      # Twilio integration
 │   ├── guardrails/        # Input/output validation
 │   │   ├── input_validator.py
 │   │   └── output_validator.py
 │   ├── models/            # Data models
 │   │   └── reservation.py
 │   ├── config.py          # Configuration management
-│   └── cli.py             # CLI interface
+│   ├── cli.py             # CLI interface
+│   └── server.py          # FastAPI WebSocket server
 ├── tests/                 # Test suite
-├── main.py               # Entry point
+│   ├── test_agents.py
+│   ├── test_audio_converter.py
+│   ├── test_call_manager.py
+│   └── ...
+├── scripts/               # Helper scripts
+│   └── start_server.sh
+├── docs/                  # Documentation
+│   ├── deployment.md      # Deployment guide
+│   └── ...
+├── AGENTS.md             # Agent architecture docs
 └── pyproject.toml        # Dependencies and config
 ```
 
@@ -250,28 +403,48 @@ The result is formatted and displayed with:
 This is an MVP with the following limitations:
 
 1. **Mock Restaurant Service**: Returns static demo restaurant data
-2. **Simplified Voice Integration**: Basic Twilio integration; full Realtime API WebSocket streaming not yet implemented
-3. **No WhatsApp Integration**: Uses CLI instead (planned for future)
-4. **Limited Error Handling**: Basic error handling for demo purposes
-5. **No Persistence**: Results are not saved to a database
+2. **RealtimeAgent Integration**: WebSocket audio bridging partially implemented (POC stage)
+3. **In-Memory State**: Call state not persisted to database
+4. **Local Development**: Requires ngrok for Twilio webhooks
+5. **No WhatsApp Integration**: Uses CLI instead (planned for future)
+6. **Limited Error Handling**: Basic error handling for demo purposes
 
 ## Future Enhancements
 
-- [ ] Full WebSocket integration for real-time audio streaming
+- [ ] Complete RealtimeRunner audio bridge implementation
+- [ ] Webhook-based call completion (instead of polling)
 - [ ] WhatsApp Business API integration
-- [ ] Real restaurant database/API integration
+- [ ] Real restaurant database/API integration (Yelp, Google Places)
+- [ ] Redis/PostgreSQL for persistent call state
 - [ ] Multi-language support
-- [ ] Conversation history and persistence
+- [ ] Voicemail detection and handling
+- [ ] Call recording and playback
+- [ ] Production deployment to Railway/Fly.io
 - [ ] Advanced monitoring with Langfuse/Datadog
-- [ ] News bot and other specialized agents
+- [ ] Cancellation and modification agents
 - [ ] Visualization dashboard
 
 ## Resources
 
-- [OpenAI Agents SDK](https://github.com/openai/openai-agents-python)
-- [OpenAI Realtime API](https://platform.openai.com/docs/guides/realtime)
-- [Twilio Voice](https://www.twilio.com/docs/voice)
-- [Twilio + OpenAI Example](https://github.com/openai/openai-agents-python/tree/main/examples/realtime/twilio)
+### OpenAI Agents SDK
+- [GitHub Repository](https://github.com/openai/openai-agents-python)
+- [Documentation](https://openai.github.io/openai-agents-python/)
+- [Realtime API Guide](https://openai.github.io/openai-agents-python/realtime/guide/)
+- [Voice Examples](https://github.com/openai/openai-agents-python/tree/main/examples/voice)
+- [Guardrails](https://openai.github.io/openai-agents-python/guardrails/)
+
+### Twilio
+- [Voice API](https://www.twilio.com/docs/voice)
+- [Media Streams](https://www.twilio.com/docs/voice/twiml/stream)
+
+### Other
+- [FastAPI](https://fastapi.tiangolo.com/)
+- [ngrok](https://ngrok.com/docs)
+
+## Documentation
+
+- [AGENTS.md](AGENTS.md) - Detailed agent architecture
+- [docs/deployment.md](docs/deployment.md) - Deployment guide with ngrok
 
 ## License
 

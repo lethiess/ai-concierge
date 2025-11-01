@@ -1,12 +1,15 @@
 """Voice agent for making real-time restaurant reservation calls using OpenAI Realtime API."""
 
+import asyncio
 import logging
 from datetime import datetime
 
 from agents.realtime import RealtimeAgent
 from pydantic import BaseModel
 
+from concierge.config import get_config
 from concierge.models import Restaurant
+from concierge.services.call_manager import get_call_manager
 from concierge.services.twilio_service import TwilioService
 
 logger = logging.getLogger(__name__)
@@ -94,10 +97,10 @@ async def make_reservation_call_via_twilio(
     """Make a real-time reservation call using Twilio and OpenAI Realtime API.
 
     This function:
-    1. Creates a RealtimeAgent configured for the reservation
-    2. Initiates a Twilio call to the restaurant
-    3. Connects Twilio Media Streams to the RealtimeAgent
-    4. Conducts the voice conversation in real-time
+    1. Creates a call in CallManager with reservation details
+    2. Initiates a Twilio call with TwiML pointing to WebSocket server
+    3. The server handles the RealtimeAgent and audio streaming
+    4. Polls for call completion
     5. Returns the result
 
     Args:
@@ -110,13 +113,16 @@ async def make_reservation_call_via_twilio(
     Note:
         This requires:
         - Twilio account with Media Streams capability
-        - WebSocket server to connect Twilio ↔ RealtimeAgent
-        - Proper audio format handling (PCM16, mulaw, etc.)
+        - WebSocket server running (concierge.server)
+        - PUBLIC_DOMAIN configured for Twilio webhooks
     """
     logger.info(f"Initiating real-time reservation call to {restaurant.name}")
 
+    config = get_config()
     twilio_service = TwilioService()
+    call_manager = get_call_manager()
 
+    # Check if Twilio is configured
     if not twilio_service.is_configured():
         logger.warning("Twilio not configured - returning simulated result")
         return simulate_reservation_call(
@@ -126,47 +132,132 @@ async def make_reservation_call_via_twilio(
             reservation_details["time"],
         )
 
+    # Check if server is configured
+    if not config.public_domain:
+        logger.error(
+            "PUBLIC_DOMAIN not configured - cannot make call. "
+            "Please set PUBLIC_DOMAIN in .env (e.g., your ngrok URL)"
+        )
+        return ReservationResult(
+            status="error",
+            restaurant_name=restaurant.name,
+            message="Server not configured: PUBLIC_DOMAIN must be set for Twilio webhooks",
+            call_duration=0.0,
+        )
+
     start_time = datetime.now()
 
     try:
-        # Create the realtime voice agent with reservation context
-        _voice_agent = create_voice_agent(reservation_details)
+        # Step 1: Create call in CallManager
+        call_state = call_manager.create_call(reservation_details)
+        call_id = call_state.call_id
+        logger.info(f"Created call {call_id} in CallManager")
 
-        # TODO: Implement the full Twilio Media Streams integration
-        # This requires:
-        # 1. Start a WebSocket server to handle Twilio Media Streams
-        # 2. Initiate Twilio call with TwiML that connects to the WebSocket
-        # 3. Use RealtimeRunner to manage the agent session
-        # 4. Stream audio bidirectionally: Twilio ↔ WebSocket ↔ RealtimeAgent
-        # 5. Handle call events (answered, completed, failed, etc.)
-        # 6. Extract confirmation number from conversation
-        # 7. Return structured result
+        # Step 2: Build TwiML URL
+        # The server will generate TwiML that routes to the WebSocket
+        twiml_url = f"https://{config.public_domain}/twiml?call_id={call_id}"
+        logger.info(f"TwiML URL: {twiml_url}")
 
-        # For MVP, we simulate the call
-        logger.warning(
-            "Full Twilio Media Streams integration not yet implemented - simulating"
+        # Step 3: Initiate Twilio call
+        call_sid = twilio_service.initiate_call(
+            to_number=restaurant.phone_number,
+            twiml_url=twiml_url,
         )
+        call_manager.set_call_sid(call_id, call_sid)
+        logger.info(f"Initiated Twilio call {call_sid} for reservation call {call_id}")
+
+        # Step 4: Wait for call to complete (poll with timeout)
+        result = await wait_for_call_completion(call_id, timeout=180)
+
         duration = (datetime.now() - start_time).total_seconds()
-
-        return ReservationResult(
-            status="confirmed",
-            restaurant_name=restaurant.name,
-            confirmation_number=f"REALTIME-SIM-{int(datetime.now().timestamp())}",
-            message=f"[SIMULATED REALTIME CALL] Reservation confirmed at {restaurant.name} for {reservation_details['party_size']} people on {reservation_details['date']} at {reservation_details['time']}. "
-            "Note: Full Twilio Media Streams integration pending.",
-            call_duration=duration,
-        )
+        result.call_duration = duration
 
     except Exception as e:
         logger.exception("Error making realtime reservation call")
         duration = (datetime.now() - start_time).total_seconds()
 
-        return ReservationResult(
+        result = ReservationResult(
             status="error",
             restaurant_name=restaurant.name,
-            message=f"Error making call - see logs for details: {e}",
+            message=f"Error making call: {e}",
             call_duration=duration,
         )
+
+    return result
+
+
+async def wait_for_call_completion(
+    call_id: str, timeout: int = 180, poll_interval: int = 2
+) -> ReservationResult:
+    """Wait for a call to complete by polling CallManager.
+
+    Args:
+        call_id: Call identifier
+        timeout: Maximum wait time in seconds
+        poll_interval: Seconds between status checks
+
+    Returns:
+        ReservationResult
+
+    Raises:
+        TimeoutError: If call doesn't complete within timeout
+    """
+    call_manager = get_call_manager()
+    elapsed = 0
+
+    logger.info(f"Waiting for call {call_id} to complete (timeout: {timeout}s)")
+
+    while elapsed < timeout:
+        await asyncio.sleep(poll_interval)
+        elapsed += poll_interval
+
+        call_state = call_manager.get_call(call_id)
+        if not call_state:
+            msg = f"Call {call_id} not found in CallManager"
+            raise ValueError(msg)
+
+        if call_state.status == "completed":
+            logger.info(f"Call {call_id} completed successfully")
+
+            # Determine status based on confirmation number
+            if call_state.confirmation_number:
+                status = "confirmed"
+                message = f"Reservation confirmed at {call_state.reservation_details.get('restaurant_name', 'restaurant')}"
+            else:
+                status = "pending"
+                message = "Call completed but no confirmation number received. Please check with restaurant."
+
+            return ReservationResult(
+                status=status,
+                restaurant_name=call_state.reservation_details.get(
+                    "restaurant_name", "Unknown"
+                ),
+                confirmation_number=call_state.confirmation_number,
+                message=message,
+            )
+
+        if call_state.status == "failed":
+            logger.error(f"Call {call_id} failed: {call_state.error_message}")
+            return ReservationResult(
+                status="error",
+                restaurant_name=call_state.reservation_details.get(
+                    "restaurant_name", "Unknown"
+                ),
+                message=f"Call failed: {call_state.error_message}",
+            )
+
+    # Timeout
+    logger.warning(f"Call {call_id} timed out after {timeout}s")
+    call_manager.update_status(call_id, "failed")
+    call_manager.set_error(call_id, f"Call timed out after {timeout}s")
+
+    return ReservationResult(
+        status="error",
+        restaurant_name=call_manager.get_call(call_id).reservation_details.get(
+            "restaurant_name", "Unknown"
+        ),
+        message=f"Call timed out after {timeout} seconds",
+    )
 
 
 def simulate_reservation_call(

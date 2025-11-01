@@ -26,6 +26,13 @@ class Config(BaseSettings):
     twilio_auth_token: str | None = Field(None, description="Twilio auth token")
     twilio_phone_number: str | None = Field(None, description="Twilio phone number")
 
+    # Server Configuration
+    server_host: str = Field(default="0.0.0.0", description="Server host")
+    server_port: int = Field(default=8080, description="Server port")
+    public_domain: str | None = Field(
+        None, description="Public domain for Twilio webhooks (e.g., abc123.ngrok.io)"
+    )
+
     # Demo Restaurant Configuration
     demo_restaurant_phone: str = Field(
         default="+1234567890", description="Demo restaurant phone number"
@@ -45,6 +52,10 @@ class Config(BaseSettings):
     realtime_model: str = Field(
         default="gpt-4o-realtime-preview-2024-10-01",
         description="OpenAI Realtime model",
+    )
+    realtime_voice: str = Field(
+        default="alloy",
+        description="Voice for realtime agent (alloy, echo, fable, onyx, nova, shimmer)",
     )
 
     def has_twilio_config(self) -> bool:

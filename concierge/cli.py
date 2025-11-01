@@ -4,6 +4,7 @@ import logging
 import sys
 
 from agents import Runner
+from agents.extensions.visualization import draw_graph
 
 from concierge.agents import (
     create_orchestrator_agent,
@@ -44,6 +45,8 @@ class ConciergeCLI:
             party_size_guardrail,
             output_validation_guardrail,
         ]
+
+        draw_graph(self.orchestrator, filename="agent_graph")
 
         logger.info("AI Concierge CLI initialized with realtime voice capabilities")
 
