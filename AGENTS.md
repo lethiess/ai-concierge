@@ -2,8 +2,8 @@
 
 ## Setup commands
 - Install deps: `uv sync --extra dev`
-- Start dev server: `python main.py`
-- Run tests: `pytest run`
+- Start dev server: `python -m concierge`
+- Run tests: `pytest`
 
 
 ## Code Style

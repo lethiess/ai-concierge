@@ -3,18 +3,23 @@ name = "AI-Concierge"
 version = "0.1.0"
 description = "Simple AI-Concierge using OpenAI Agents SDK"
 readme = "README.md"
-requires-python = ">=3.13.7"
+requires-python = ">=3.13,<3.14"
 dependencies = [
     "numpy>=2.3.3",
     "openai>=1.107.2",
     "openai-agents[voice]>=0.3.0",
     "pytest>=8.4.2",
+    "twilio>=9.0.0",
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    "websockets>=12.0",
 ]
 
 [project.optional-dependencies]
 dev = [
     "ruff>=0.8.0",
     "pre-commit>=4.0.0",
+    "pytest-asyncio>=0.23.0",
 ]
 
 # Ruff configuration
@@ -84,10 +89,12 @@ ignore = [
     "E501",  # line too long
     "B008",  # do not perform function calls in argument defaults
     "B006",  # do not use mutable data structures for argument defaults
+    "PLR0911", # too many return statements
     "PLR0913", # too many arguments to function call
     "PLR0912", # too many branches
     "PLR0915", # too many statements
     "PLR2004", # magic value used in comparison
+    "PLW0603", # global statement
     "TRY003", # avoid specifying long messages outside the exception class
     "EM101",  # raw string in exception, use f-string
     "EM102",  # f-string in exception, use .format()
@@ -109,9 +116,12 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
     "TID252",   # relative imports
 ]
 
-# Allow print statements in scripts
+# Allow print statements in scripts and CLI
 "scripts/**/*.py" = [
     "T20",  # flake8-print
+]
+"concierge/cli.py" = [
+    "T201",  # print statements allowed in CLI
 ]
 
 [tool.ruff.lint.isort]
@@ -137,3 +147,10 @@ docstring-code-format = false
 # Set the line length limit used when formatting code snippets in
 # docstrings.
 docstring-code-line-length = "dynamic"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
