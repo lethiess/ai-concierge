@@ -7,8 +7,8 @@ from agents import Runner
 from agents.extensions.visualization import draw_graph
 
 from concierge.agents import (
-    create_orchestrator_agent,
-    create_reservation_agent,
+    OrchestratorAgent,
+    ReservationAgent,
     format_reservation_result,
 )
 from concierge.agents.tools import find_restaurant
@@ -34,10 +34,12 @@ class ConciergeCLI:
         # Orchestrator → Reservation Agent (which triggers realtime voice calls)
 
         # Tier 2: Reservation Agent (handles reservation logic + voice calls)
-        reservation_agent = create_reservation_agent(find_restaurant)
+        reservation_agent_instance = ReservationAgent(find_restaurant)
+        reservation_agent = reservation_agent_instance.create()
 
         # Tier 1: Orchestrator (routes requests)
-        self.orchestrator = create_orchestrator_agent(reservation_agent)
+        orchestrator_instance = OrchestratorAgent(reservation_agent)
+        self.orchestrator = orchestrator_instance.create()
 
         # Add guardrails to the orchestrator
         self.orchestrator.guardrails = [

@@ -1,32 +1,59 @@
 """Orchestrator agent that routes requests to specialized agents using OpenAI Agents SDK."""
 
 import logging
+from typing import TYPE_CHECKING
 
 from agents import Agent
 
 from concierge.config import get_config
 
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
 logger = logging.getLogger(__name__)
 
 
-def create_orchestrator_agent(*specialized_agents: Agent) -> Agent:
-    """Create the orchestrator agent that routes to specialized agents.
+class OrchestratorAgent:
+    """Orchestrator agent that routes requests to specialized agents.
 
     This is the main entry point for all user requests. It analyzes the intent
     and routes to the appropriate specialized agent.
 
-    Args:
-        *specialized_agents: Variable number of specialized agents to route to
-
-    Returns:
-        Configured orchestrator agent
+    Attributes:
+        specialized_agents: List of specialized agents to route to
+        config: Application configuration
+        _agent: The underlying Agent instance (created lazily)
     """
-    config = get_config()
 
-    orchestrator_agent = Agent(
-        name="AI Concierge Orchestrator",
-        model=config.agent_model,
-        instructions="""You are the AI Concierge orchestrator. Your role is to understand user requests
+    def __init__(self, *specialized_agents: Agent) -> None:
+        """Initialize the orchestrator agent.
+
+        Args:
+            *specialized_agents: Variable number of specialized agents to route to
+        """
+        self.specialized_agents: Sequence[Agent] = list(specialized_agents)
+        self.config = get_config()
+        self._agent: Agent | None = None
+
+        logger.info(
+            "OrchestratorAgent initialized with %d specialized agents",
+            len(self.specialized_agents),
+        )
+
+    def create(self) -> Agent:
+        """Create and return the configured orchestrator agent.
+
+        Returns:
+            Configured orchestrator agent
+
+        Note:
+            The agent is created lazily on first call and cached.
+        """
+        if self._agent is None:
+            self._agent = Agent(
+                name="AI Concierge Orchestrator",
+                model=self.config.agent_model,
+                instructions="""You are the AI Concierge orchestrator. Your role is to understand user requests
 and route them to the appropriate specialized agent.
 
 Current capabilities:
@@ -49,13 +76,37 @@ Future capabilities (not yet implemented):
 When you identify a reservation request, immediately hand off to the Reservation Agent.
 Don't ask for details yourself - let the specialized agent handle that.
 """,
-        handoffs=list(specialized_agents),
-    )
+                handoffs=self.specialized_agents,
+            )
+            logger.info("Orchestrator agent created successfully")
 
-    logger.info(
-        "Orchestrator agent created with %d specialized agents", len(specialized_agents)
-    )
-    return orchestrator_agent
+        return self._agent
+
+    @property
+    def agent(self) -> Agent:
+        """Get the agent instance (creates it if needed).
+
+        Returns:
+            The orchestrator agent
+        """
+        return self.create()
+
+
+# Backward compatibility: Factory function that wraps the class
+def create_orchestrator_agent(*specialized_agents: Agent) -> Agent:
+    """Create the orchestrator agent that routes to specialized agents.
+
+    This is a convenience function for backward compatibility.
+    For new code, use OrchestratorAgent class directly.
+
+    Args:
+        *specialized_agents: Variable number of specialized agents to route to
+
+    Returns:
+        Configured orchestrator agent
+    """
+    orchestrator = OrchestratorAgent(*specialized_agents)
+    return orchestrator.create()
 
 
 def format_reservation_result(result) -> str:

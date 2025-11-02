@@ -25,35 +25,61 @@ class ReservationResult(BaseModel):
     call_duration: float | None = None
 
 
-def create_voice_agent(reservation_details: dict) -> RealtimeAgent:
-    """Create a realtime voice agent for making restaurant reservation calls.
+class VoiceAgent:
+    """Voice agent for making real-time restaurant reservation calls.
 
     This agent uses OpenAI's Realtime API for full-duplex audio conversations,
     enabling natural phone calls to restaurants via Twilio Media Streams.
 
-    Args:
-        reservation_details: Dictionary containing reservation information:
-            - restaurant_name: Name of the restaurant
-            - restaurant_phone: Phone number to call
-            - party_size: Number of people
-            - date: Reservation date
-            - time: Reservation time
-            - customer_name: Optional customer name
-            - special_requests: Optional special requests
-
-    Returns:
-        Configured RealtimeAgent for conducting the reservation call
+    Attributes:
+        reservation_details: Dictionary containing reservation information
+        _agent: The underlying RealtimeAgent instance (created lazily)
     """
-    # Extract reservation details
-    restaurant_name = reservation_details.get("restaurant_name")
-    party_size = reservation_details.get("party_size")
-    date = reservation_details.get("date")
-    time = reservation_details.get("time")
-    customer_name = reservation_details.get("customer_name", "the customer")
-    special_requests = reservation_details.get("special_requests", "")
 
-    # Build instructions for the voice agent
-    instructions = f"""You are calling {restaurant_name} to make a restaurant reservation.
+    def __init__(self, reservation_details: dict) -> None:
+        """Initialize the voice agent.
+
+        Args:
+            reservation_details: Dictionary containing reservation information:
+                - restaurant_name: Name of the restaurant
+                - restaurant_phone: Phone number to call
+                - party_size: Number of people
+                - date: Reservation date
+                - time: Reservation time
+                - customer_name: Optional customer name
+                - special_requests: Optional special requests
+        """
+        self.reservation_details = reservation_details
+        self._agent: RealtimeAgent | None = None
+
+        logger.info(
+            "VoiceAgent initialized for %s",
+            reservation_details.get("restaurant_name", "unknown restaurant"),
+        )
+
+    def create(self) -> RealtimeAgent:
+        """Create and return the configured RealtimeAgent.
+
+        Returns:
+            Configured RealtimeAgent for conducting the reservation call
+
+        Note:
+            The agent is created lazily on first call and cached.
+            Full configuration (voice, temperature, etc.) is done via RealtimeRunner.
+        """
+        if self._agent is None:
+            # Extract reservation details
+            restaurant_name = self.reservation_details.get("restaurant_name")
+            party_size = self.reservation_details.get("party_size")
+            date = self.reservation_details.get("date")
+            time = self.reservation_details.get("time")
+            customer_name = self.reservation_details.get(
+                "customer_name", "the customer"
+            )
+            special_requests = self.reservation_details.get("special_requests", "")
+
+            # Build instructions for the voice agent
+            instructions = f"""You are calling {restaurant_name} to make a restaurant reservation.
 
 **Your Task:**
 Make a reservation for {party_size} people on {date} at {time}.
@@ -80,15 +106,49 @@ Customer name: {customer_name}
 Your goal is to successfully book the reservation or gather information about alternatives.
 """
 
-    # Create the RealtimeAgent with minimal configuration
-    # Full configuration (voice, temperature, etc.) is done via RealtimeRunner
-    voice_agent = RealtimeAgent(
-        name="Restaurant Reservation Voice Agent",
-        instructions=instructions,
-    )
+            # Create the RealtimeAgent with minimal configuration
+            # Full configuration (voice, temperature, etc.) is done via RealtimeRunner
+            self._agent = RealtimeAgent(
+                name="Restaurant Reservation Voice Agent",
+                instructions=instructions,
+            )
 
-    logger.info(f"Realtime voice agent created for calling {restaurant_name}")
-    return voice_agent
+            logger.info("Realtime voice agent created for calling %s", restaurant_name)
+
+        return self._agent
+
+    @property
+    def agent(self) -> RealtimeAgent:
+        """Get the agent instance (creates it if needed).
+
+        Returns:
+            The voice agent
+        """
+        return self.create()
+
+
+# Backward compatibility: Factory function that wraps the class
+def create_voice_agent(reservation_details: dict) -> RealtimeAgent:
+    """Create a realtime voice agent for making restaurant reservation calls.
+
+    This is a convenience function for backward compatibility.
+    For new code, use VoiceAgent class directly.
+
+    Args:
+        reservation_details: Dictionary containing reservation information:
+            - restaurant_name: Name of the restaurant
+            - restaurant_phone: Phone number to call
+            - party_size: Number of people
+            - date: Reservation date
+            - time: Reservation time
+            - customer_name: Optional customer name
+            - special_requests: Optional special requests
+
+    Returns:
+        Configured RealtimeAgent for conducting the reservation call
+    """
+    voice_agent = VoiceAgent(reservation_details)
+    return voice_agent.create()
 
 
 async def make_reservation_call_via_twilio(

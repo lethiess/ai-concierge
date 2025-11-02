@@ -1,6 +1,7 @@
 """Reservation agent for handling restaurant reservation requests using OpenAI Agents SDK."""
 
 import logging
+from collections.abc import Callable
 
 from agents import Agent, function_tool
 from pydantic import BaseModel
@@ -23,8 +24,8 @@ class ReservationDetails(BaseModel):
     special_requests: str | None = None
 
 
-def create_reservation_agent(restaurant_lookup_tool) -> Agent:
-    """Create the reservation agent that handles the reservation workflow.
+class ReservationAgent:
+    """Reservation agent that handles the reservation workflow.
 
     This agent:
     - Parses and validates reservation requests
@@ -32,86 +33,104 @@ def create_reservation_agent(restaurant_lookup_tool) -> Agent:
     - Prepares details for the voice agent
     - Initiates the real-time voice call
 
-    Note: This agent does NOT hand off to a voice agent in the traditional sense.
-    Instead, it prepares the reservation details and triggers a real-time voice call
-    using the Realtime API, which is handled outside the agent loop.
-
-    Args:
+    Attributes:
         restaurant_lookup_tool: The restaurant lookup function tool
-
-    Returns:
-        Configured reservation agent
+        config: Application configuration
+        _agent: The underlying Agent instance (created lazily)
     """
-    config = get_config()
 
-    # Create the call initiation tool
-    @function_tool
-    async def initiate_reservation_call(
-        restaurant_name: str,
-        restaurant_phone: str,
-        party_size: int,
-        date: str,
-        time: str,
-        customer_name: str | None = None,
-        special_requests: str | None = None,
-    ) -> dict:
-        """Initiate a real-time voice call to make the restaurant reservation.
-
-        This triggers a Twilio call that uses OpenAI Realtime API for the conversation.
+    def __init__(self, restaurant_lookup_tool: Callable) -> None:
+        """Initialize the reservation agent.
 
         Args:
-            restaurant_name: Name of the restaurant
-            restaurant_phone: Phone number to call
-            party_size: Number of people
-            date: Reservation date
-            time: Reservation time
-            customer_name: Customer name for the reservation
-            special_requests: Any special requests
+            restaurant_lookup_tool: The restaurant lookup function tool
+        """
+        self.restaurant_lookup_tool = restaurant_lookup_tool
+        self.config = get_config()
+        self._agent: Agent | None = None
+
+        logger.info("ReservationAgent initialized")
+
+    def create(self) -> Agent:
+        """Create and return the configured reservation agent.
 
         Returns:
-            Dictionary with call initiation result
+            Configured reservation agent
+
+        Note:
+            The agent is created lazily on first call and cached.
         """
-        # Import here to avoid circular dependency
-        from concierge.agents.voice_agent import (
-            make_reservation_call_via_twilio,
-        )
+        if self._agent is None:
+            # Create the call initiation tool
+            @function_tool
+            async def initiate_reservation_call(
+                restaurant_name: str,
+                restaurant_phone: str,
+                party_size: int,
+                date: str,
+                time: str,
+                customer_name: str | None = None,
+                special_requests: str | None = None,
+            ) -> dict:
+                """Initiate a real-time voice call to make the restaurant reservation.
 
-        logger.info(f"Initiating realtime voice call to {restaurant_name}")
+                This triggers a Twilio call that uses OpenAI Realtime API for the conversation.
 
-        # Prepare reservation details
-        reservation_details = {
-            "restaurant_name": restaurant_name,
-            "restaurant_phone": restaurant_phone,
-            "party_size": party_size,
-            "date": date,
-            "time": time,
-            "customer_name": customer_name,
-            "special_requests": special_requests,
-        }
+                Args:
+                    restaurant_name: Name of the restaurant
+                    restaurant_phone: Phone number to call
+                    party_size: Number of people
+                    date: Reservation date
+                    time: Reservation time
+                    customer_name: Customer name for the reservation
+                    special_requests: Any special requests
 
-        # Create restaurant object (in real implementation, this would come from lookup)
-        restaurant = Restaurant(
-            name=restaurant_name,
-            phone_number=restaurant_phone,
-            address="",  # Not needed for call
-            cuisine_type="",  # Not needed for call
-        )
+                Returns:
+                    Dictionary with call initiation result
+                """
+                # Import here to avoid circular dependency
+                from concierge.agents.voice_agent import (
+                    make_reservation_call_via_twilio,
+                )
 
-        # Make the realtime voice call
-        result = await make_reservation_call_via_twilio(reservation_details, restaurant)
+                logger.info(f"Initiating realtime voice call to {restaurant_name}")
 
-        return {
-            "success": result.status == "confirmed",
-            "status": result.status,
-            "confirmation_number": result.confirmation_number,
-            "message": result.message,
-            "call_duration": result.call_duration,
-        }
+                # Prepare reservation details
+                reservation_details = {
+                    "restaurant_name": restaurant_name,
+                    "restaurant_phone": restaurant_phone,
+                    "party_size": party_size,
+                    "date": date,
+                    "time": time,
+                    "customer_name": customer_name,
+                    "special_requests": special_requests,
+                }
 
-    reservation_agent = Agent(
-        name="Reservation Agent",
-        model=config.agent_model,
-        instructions="""You are a specialized restaurant reservation agent. Your role is to:
+                # Create restaurant object (in real implementation, this would come from lookup)
+                restaurant = Restaurant(
+                    name=restaurant_name,
+                    phone_number=restaurant_phone,
+                    address="",  # Not needed for call
+                    cuisine_type="",  # Not needed for call
+                )
+
+                # Make the realtime voice call
+                result = await make_reservation_call_via_twilio(
+                    reservation_details, restaurant
+                )
+
+                return {
+                    "success": result.status == "confirmed",
+                    "status": result.status,
+                    "confirmation_number": result.confirmation_number,
+                    "message": result.message,
+                    "call_duration": result.call_duration,
+                }
+
+            self._agent = Agent(
+                name="Reservation Agent",
+                model=self.config.agent_model,
+                instructions="""You are a specialized restaurant reservation agent. Your role is to:
 
 1. Parse the user's reservation request and extract:
    - Restaurant name
@@ -142,9 +161,35 @@ If the restaurant is not found, inform the user and ask for clarification.
 
 After initiating the call, report the result to the user clearly.
 """,
-        tools=[restaurant_lookup_tool, initiate_reservation_call],
-        output_type=ReservationDetails,
-    )
+                tools=[self.restaurant_lookup_tool, initiate_reservation_call],
+                output_type=ReservationDetails,
+            )
+            logger.info("Reservation agent created successfully")
 
-    logger.info("Reservation agent created")
-    return reservation_agent
+        return self._agent
+
+    @property
+    def agent(self) -> Agent:
+        """Get the agent instance (creates it if needed).
+
+        Returns:
+            The reservation agent
+        """
+        return self.create()
+
+
+# Backward compatibility: Factory function that wraps the class
+def create_reservation_agent(restaurant_lookup_tool) -> Agent:
+    """Create the reservation agent that handles the reservation workflow.
+
+    This is a convenience function for backward compatibility.
+    For new code, use ReservationAgent class directly.
+
+    Args:
+        restaurant_lookup_tool: The restaurant lookup function tool
+
+    Returns:
+        Configured reservation agent
+    """
+    reservation = ReservationAgent(restaurant_lookup_tool)
+    return reservation.create()

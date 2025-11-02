@@ -18,7 +18,7 @@ from agents.realtime import RealtimeRunner
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Response, Query
 from fastapi.responses import JSONResponse
 
-from concierge.agents.voice_agent import create_voice_agent
+from concierge.agents.voice_agent import VoiceAgent
 from concierge.config import get_config
 from concierge.services.audio_converter import (
     decode_twilio_audio,
@@ -204,7 +204,8 @@ async def handle_media_stream(websocket: WebSocket, call_id: str = Query(...)):
 
     try:
         # Create RealtimeAgent for this call
-        voice_agent = create_voice_agent(call_state.reservation_details)
+        voice_agent_instance = VoiceAgent(call_state.reservation_details)
+        voice_agent = voice_agent_instance.create()
         logger.info(f"Created RealtimeAgent for call {call_id}")
 
         # Get configuration
