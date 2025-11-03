@@ -43,6 +43,43 @@ class TwilioService:
         """
         return self.client is not None
 
+    def _validate_phone_number(self, phone_number: str) -> None:
+        """Validate that only the demo restaurant number can be called.
+
+        This prevents expensive calls to unauthorized numbers.
+
+        Args:
+            phone_number: The phone number to validate
+
+        Raises:
+            ValueError: If the number is not the demo restaurant number
+        """
+        demo_number = self.config.demo_restaurant_phone
+
+        # Normalize phone numbers for comparison (remove spaces, dashes, etc.)
+        normalized_demo = (
+            demo_number.replace(" ", "")
+            .replace("-", "")
+            .replace("(", "")
+            .replace(")", "")
+        )
+        normalized_input = (
+            phone_number.replace(" ", "")
+            .replace("-", "")
+            .replace("(", "")
+            .replace(")", "")
+        )
+
+        # Only allow demo restaurant number
+        if normalized_input != normalized_demo:
+            raise ValueError(
+                f"Only the demo restaurant number can be called. "
+                f"Attempted: {phone_number}, Allowed: {demo_number}. "
+                f"This is a safety feature to prevent unauthorized calls."
+            )
+
+        logger.info(f"Phone number validated: {phone_number} matches demo number")
+
     def initiate_call(
         self,
         to_number: str,
@@ -51,8 +88,11 @@ class TwilioService:
     ) -> str:
         """Initiate an outbound call.
 
+        Only the demo restaurant number from config can be called.
+        This is a safety feature to prevent unauthorized calls.
+
         Args:
-            to_number: The phone number to call
+            to_number: The phone number to call (must match demo_restaurant_phone)
             twiml_url: URL that returns TwiML instructions (optional)
             status_callback: URL for call status callbacks (optional)
 
@@ -60,12 +100,15 @@ class TwilioService:
             Call SID
 
         Raises:
-            ValueError: If Twilio is not configured
+            ValueError: If Twilio is not configured or number is not allowed
             Exception: If call initiation fails
         """
         if not self.client:
             msg = "Twilio is not configured"
             raise ValueError(msg)
+
+        # Validate phone number - only allow demo restaurant number
+        self._validate_phone_number(to_number)
 
         try:
             logger.info(f"Initiating call to {to_number}")

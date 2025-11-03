@@ -1,6 +1,7 @@
 """Command-line interface for AI Concierge using OpenAI Agents SDK."""
 
 import logging
+import os
 import sys
 
 from agents import Runner
@@ -29,6 +30,11 @@ class ConciergeCLI:
         """Initialize the CLI."""
         self.config = get_config()
         setup_logging(self.config)
+
+        # Ensure OpenAI API key is available to the SDK via environment variable
+        # The SDK reads directly from os.environ, not from our Config
+        if self.config.openai_api_key and "OPENAI_API_KEY" not in os.environ:
+            os.environ["OPENAI_API_KEY"] = self.config.openai_api_key
 
         # Create the 2-tier agent architecture:
         # Orchestrator → Reservation Agent (which triggers realtime voice calls)
@@ -130,10 +136,8 @@ class ConciergeCLI:
         try:
             # Run the orchestrator using the SDK Runner
             # The orchestrator will route to the appropriate agent
-            result = Runner.run_sync(
-                agent=self.orchestrator,
-                input=user_input,
-            )
+            runner = Runner()
+            result = runner.run_sync(starting_agent=self.orchestrator, input=user_input)
 
             # Display the result
             if hasattr(result, "final_output"):

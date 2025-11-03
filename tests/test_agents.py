@@ -125,10 +125,10 @@ class TestTools:
         """Test finding a restaurant that exists."""
         # Test via the underlying service
         service = RestaurantService()
-        restaurant = service.find_restaurant("Demo Restaurant")
+        restaurant = service.find_restaurant("Lugis Pizza")
 
         assert restaurant is not None
-        assert restaurant.name == "Demo Restaurant"
+        assert restaurant.name == "Lugis Pizza"
 
     def test_find_restaurant_not_found(self):
         """Test finding a restaurant that doesn't exist."""

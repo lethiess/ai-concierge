@@ -194,10 +194,8 @@ The system uses the SDK's built-in guardrail system for input and output validat
 The SDK's Runner executes the agent loop:
 
 ```python
-result = Runner.run_sync(
-    agent=orchestrator,
-    input=user_input,
-)
+runner = Runner()
+result = runner.run_sync(starting_agent=orchestrator, input=user_input)
 ```
 
 **Loop flow**:

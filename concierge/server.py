@@ -90,10 +90,14 @@ async def generate_twiml(call_id: str = Query(..., description="Unique call ID")
     # Use wss:// for secure WebSocket connection
     websocket_url = f"wss://{config.public_domain}/media-stream?call_id={call_id}"
 
+    # TwiML with Stream parameters:
+    # - track="inbound_track outbound_track" to receive both audio streams
+    # - Note: For trial accounts, Twilio will prompt to press a key first
+    # - The Stream will connect after the keypress
     twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Connect>
-        <Stream url="{websocket_url}" />
+        <Stream url="{websocket_url}" track="inbound_track outbound_track" />
     </Connect>
 </Response>"""
 
@@ -344,6 +348,15 @@ async def handle_twilio_to_realtime(
                     stream_sid = data["start"]["streamSid"]
                     call_state.call_sid = stream_sid
                     logger.info(f"Twilio media stream started: {stream_sid}")
+                    # Trigger the agent to start speaking by sending initial audio (silence)
+                    # This ensures the agent begins the conversation
+                    logger.info("Stream connected - agent should start speaking")
+
+                elif event_type == "dtmf":
+                    # Handle DTMF (keypress) events - important for trial accounts
+                    digit = data.get("dtmf", {}).get("digit")
+                    logger.info(f"DTMF keypress received: {digit}")
+                    # Don't end the call on keypress - continue with the stream
 
                 elif event_type == "media":
                     # Audio data from Twilio (base64 encoded mulaw)

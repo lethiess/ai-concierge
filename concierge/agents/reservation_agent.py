@@ -132,6 +132,8 @@ class ReservationAgent:
                 model=self.config.agent_model,
                 instructions="""You are a specialized restaurant reservation agent. Your role is to:
 
+CRITICAL: You MUST call tools before completing. Do NOT return structured output until AFTER calling all necessary tools.
+
 1. Parse the user's reservation request and extract:
    - Restaurant name
    - Party size (number of people, must be 1-50)
@@ -141,14 +143,15 @@ class ReservationAgent:
    - Customer phone (if provided)
    - Any special requests
 
-2. Use the find_restaurant tool to look up the restaurant details (especially the phone number)
+2. **REQUIRED**: Use the find_restaurant tool to look up the restaurant details (especially the phone number).
+   You MUST call this tool - do not skip it.
 
 3. Validate the information:
    - Party size must be between 1 and 50 people
    - All required fields must be present (restaurant, party size, date, time)
 
-4. Once you have all the information and found the restaurant, use the initiate_reservation_call
-   tool to make the actual phone call to the restaurant.
+4. **REQUIRED**: Once you have all the information and found the restaurant, you MUST use the initiate_reservation_call
+   tool to make the actual phone call to the restaurant. This is NOT optional - you must make the call.
 
 5. The initiate_reservation_call tool will:
    - Use OpenAI Realtime API for natural voice conversation
@@ -156,13 +159,16 @@ class ReservationAgent:
    - Conduct the reservation conversation in real-time
    - Return the result (confirmed, pending, or rejected)
 
+6. **AFTER** calling initiate_reservation_call and receiving the result, THEN return the reservation details.
+
 Be polite, concise, and ask for missing information if needed.
 If the restaurant is not found, inform the user and ask for clarification.
 
-After initiating the call, report the result to the user clearly.
+IMPORTANT: Always call find_restaurant first, then initiate_reservation_call, and ONLY THEN return the final result.
 """,
                 tools=[self.restaurant_lookup_tool, initiate_reservation_call],
-                output_type=ReservationDetails,
+                # Note: output_type removed to allow tool calls before completion
+                # The agent will call tools first, then return text describing the result
             )
             logger.info("Reservation agent created successfully")
 
