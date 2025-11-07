@@ -217,13 +217,18 @@ async def make_reservation_call_via_twilio(
 
         # Step 2: Build TwiML URL
         # The server will generate TwiML that routes to the WebSocket
-        twiml_url = f"https://{config.public_domain}/twiml?call_id={call_id}"
+        # Add test_mode=true to test without WebSocket first
+        twiml_url = (
+            f"https://{config.public_domain}/twiml?call_id={call_id}&test_mode=false"
+        )
+        status_callback_url = f"https://{config.public_domain}/twilio-status"
         logger.info(f"TwiML URL: {twiml_url}")
 
         # Step 3: Initiate Twilio call
         call_sid = twilio_service.initiate_call(
             to_number=restaurant.phone_number,
             twiml_url=twiml_url,
+            status_callback=status_callback_url,
         )
         call_manager.set_call_sid(call_id, call_sid)
         logger.info(f"Initiated Twilio call {call_sid} for reservation call {call_id}")

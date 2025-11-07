@@ -15,8 +15,9 @@ from contextlib import asynccontextmanager, suppress
 
 import uvicorn
 from agents.realtime import RealtimeRunner
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Response, Query
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Response, Query, Request
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 from concierge.agents.voice_agent import VoiceAgent
 from concierge.config import get_config
@@ -48,6 +49,16 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Add CORS middleware to allow WebSocket connections from browsers
+# This is needed for testing with test_websocket.html and for Twilio webhooks
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins for development/testing
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 @app.get("/")
 async def root():
@@ -67,12 +78,61 @@ async def health_check():
     return {"status": "healthy", "service": "ai-concierge-voice"}
 
 
-@app.post("/twiml")
-async def generate_twiml(call_id: str = Query(..., description="Unique call ID")):
+@app.get("/diagnostics")
+async def diagnostics():
+    """Comprehensive diagnostics for debugging Twilio integration."""
+    config = get_config()
+    call_manager = get_call_manager()
+
+    return {
+        "server": {
+            "status": "running",
+            "host": config.server_host,
+            "port": config.server_port,
+            "public_domain": config.public_domain or "NOT CONFIGURED",
+        },
+        "twilio": {
+            "configured": config.has_twilio_config(),
+            "account_sid": config.twilio_account_sid[:8] + "..."
+            if config.twilio_account_sid
+            else None,
+            "phone_number": config.twilio_phone_number,
+        },
+        "endpoints": {
+            "twiml": f"https://{config.public_domain}/twiml?call_id=test"
+            if config.public_domain
+            else "NOT AVAILABLE",
+            "websocket_test": f"wss://{config.public_domain}/ws-test"
+            if config.public_domain
+            else "NOT AVAILABLE",
+            "media_stream": f"wss://{config.public_domain}/media-stream?call_id=test"
+            if config.public_domain
+            else "NOT AVAILABLE",
+        },
+        "calls": {
+            "total": len(call_manager.get_all_calls()),
+            "recent": [
+                {
+                    "call_id": call.call_id,
+                    "status": call.status,
+                    "restaurant": call.reservation_details.get("restaurant_name"),
+                }
+                for call in list(call_manager.get_all_calls())[-5:]
+            ],
+        },
+    }
+
+
+@app.api_route("/twiml", methods=["GET", "POST"])
+async def generate_twiml(
+    call_id: str = Query(..., description="Unique call ID"),
+    test_mode: bool = Query(False, description="Use simple test TwiML"),
+):
     """Generate TwiML to route Twilio call to Media Stream WebSocket.
 
     Args:
         call_id: Unique identifier for this call
+        test_mode: If True, return simple test TwiML without WebSocket
 
     Returns:
         TwiML XML response
@@ -87,21 +147,39 @@ async def generate_twiml(call_id: str = Query(..., description="Unique call ID")
             status_code=500,
         )
 
+    # Test mode: Simple TwiML without WebSocket to verify basic functionality
+    if test_mode:
+        twiml = """<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say>Hello, this is a test from AI Concierge. The webhook is working correctly.</Say>
+    <Pause length="2"/>
+    <Say>If you hear this message, your server is reachable from Twilio.</Say>
+</Response>"""
+        logger.info(f"Generated TEST TwiML for call {call_id}")
+        logger.info(f"TwiML Response:\n{twiml}")
+        return Response(content=twiml, media_type="text/xml")
+
     # Use wss:// for secure WebSocket connection
     websocket_url = f"wss://{config.public_domain}/media-stream?call_id={call_id}"
 
     # TwiML with Stream parameters:
-    # - track="inbound_track outbound_track" to receive both audio streams
-    # - Note: For trial accounts, Twilio will prompt to press a key first
-    # - The Stream will connect after the keypress
+    # - track="inbound_track" is the only valid value for <Connect> verb
+    #   (see https://www.twilio.com/docs/api/errors/31941)
+    # - This captures audio from the caller (restaurant staff)
+    # - Added <Say> before <Connect> to ensure call is fully established
     twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
+    <Say>Connecting you to our reservation system.</Say>
     <Connect>
-        <Stream url="{websocket_url}" track="inbound_track outbound_track" />
+        <Stream url="{websocket_url}" track="inbound_track" />
     </Connect>
 </Response>"""
 
-    logger.info(f"Generated TwiML for call {call_id}")
+    logger.info("=" * 70)
+    logger.info(f"📞 Generated TwiML for call {call_id}")
+    logger.info(f"🔗 WebSocket URL: {websocket_url}")
+    logger.info(f"📄 TwiML Response:\n{twiml}")
+    logger.info("=" * 70)
     return Response(content=twiml, media_type="text/xml")
 
 
@@ -177,8 +255,62 @@ async def get_metrics():
     }
 
 
+@app.api_route("/twilio-status", methods=["GET", "POST"])
+async def twilio_status_callback(request: Request):
+    """Handle Twilio status callbacks for debugging.
+
+    This endpoint receives updates about call status from Twilio.
+    """
+    # Get all data from the request
+    if request.method == "POST":
+        form_data = await request.form()
+        data = dict(form_data)
+    else:
+        data = dict(request.query_params)
+
+    # Log all received data for debugging
+    logger.info("=" * 70)
+    logger.info("Twilio status callback received")
+    logger.info(f"  Method: {request.method}")
+    logger.info(f"  All data: {data}")
+    logger.info("=" * 70)
+
+    # Extract key fields
+    call_sid = data.get("CallSid")
+    call_status = data.get("CallStatus")
+    error_code = data.get("ErrorCode")
+    error_message = data.get("ErrorMessage")
+
+    if call_sid:
+        logger.info(f"📞 Call {call_sid}: Status={call_status}")
+
+    if error_code:
+        logger.error(f"❌ Twilio error {error_code}: {error_message}")
+
+    return Response(content="OK", media_type="text/plain")
+
+
+@app.websocket("/ws-test")
+async def test_websocket(websocket: WebSocket):
+    """Simple WebSocket endpoint for testing connectivity."""
+    try:
+        logger.info("🔌 Test WebSocket connection attempt")
+        logger.info(f"  Client: {websocket.client}")
+        logger.info(f"  Headers: {dict(websocket.headers)}")
+
+        await websocket.accept()
+        logger.info("✓ Test WebSocket connected successfully")
+
+        await websocket.send_text("Hello from AI Concierge server!")
+        await websocket.close()
+        logger.info("✓ Test WebSocket closed")
+
+    except Exception as e:
+        logger.error(f"❌ Test WebSocket error: {e}", exc_info=True)
+
+
 @app.websocket("/media-stream")
-async def handle_media_stream(websocket: WebSocket, call_id: str = Query(...)):
+async def handle_media_stream(websocket: WebSocket):
     """Handle Twilio Media Stream WebSocket connection.
 
     This endpoint:
@@ -190,16 +322,71 @@ async def handle_media_stream(websocket: WebSocket, call_id: str = Query(...)):
 
     Args:
         websocket: WebSocket connection from Twilio
-        call_id: Unique identifier for this call
-    """
-    await websocket.accept()
-    logger.info(f"WebSocket connection accepted for call {call_id}")
 
-    call_manager = get_call_manager()
-    call_state = call_manager.get_call(call_id)
+    Note:
+        Twilio strips query parameters from Stream URLs, so we get call_id
+        from the 'start' event instead.
+    """
+    call_id = "unknown"
+
+    try:
+        # Extract call_id from query params (Twilio strips these, so usually empty)
+        query_params = dict(websocket.query_params)
+        call_id = query_params.get("call_id", "unknown")
+
+        logger.info("=" * 70)
+        logger.info("🔌 MEDIA STREAM WebSocket connection attempt from Twilio")
+        logger.info(f"  Call ID from URL: {call_id}")
+        logger.info(f"  Client: {websocket.client}")
+        logger.info(f"  Query params: {query_params}")
+        logger.info("=" * 70)
+
+        # Accept the WebSocket connection immediately
+        # Twilio will send a 'start' event with call details
+        await websocket.accept()
+        logger.info("✓✓✓ WebSocket ACCEPTED")
+
+        # Twilio strips query params, so we use the most recent call as fallback
+        # The 'start' event (received by handle_twilio_to_realtime) will have the CallSid
+        call_manager = get_call_manager()
+
+        # Try to get call by URL parameter first
+        if call_id != "unknown":
+            call_state = call_manager.get_call(call_id)
+            if call_state:
+                logger.info(f"✓ Found call by call_id from URL: {call_id}")
+            else:
+                logger.warning(f"Call {call_id} not found, using fallback")
+                call_id = "unknown"
+
+        # Fallback: Use the most recent call
+        # This works because we create the call immediately before initiating it
+        if call_id == "unknown":
+            recent_calls = list(call_manager.get_all_calls())
+            if recent_calls:
+                # Get the most recent call (last in list)
+                call_state = recent_calls[-1]
+                call_id = call_state.call_id
+                logger.info(f"✓ Using most recent call: {call_id}")
+            else:
+                logger.error("❌ No calls found in CallManager")
+                await websocket.close(code=1008, reason="No active calls")
+                return
+
+    except Exception as e:
+        logger.error(f"❌ Failed to accept WebSocket: {e}", exc_info=True)
+        with suppress(Exception):
+            await websocket.close(code=1011, reason="Internal error during handshake")
+        return
+
+    logger.info(f"🎯 Proceeding with call {call_id}")
+
+    # Verify call state exists
+    if not call_state:
+        call_state = call_manager.get_call(call_id)
 
     if not call_state:
-        logger.error(f"Call {call_id} not found in call manager")
+        logger.error(f"❌ Call {call_id} not found in call manager")
         await websocket.close(code=1008, reason="Call not found")
         return
 

@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Media Stream WebSocket Test</title>
+</head>
+<body>
+    <h1>Media Stream WebSocket Test</h1>
+    <p>This tests the /media-stream endpoint that Twilio connects to</p>
+    
+    <label for="callId">Call ID:</label>
+    <input type="text" id="callId" value="test-call-123" style="width: 300px;">
+    <br><br>
+    
+    <button onclick="testMediaStream()">Test /media-stream Connection</button>
+    <br><br>
+    
+    <div id="output"></div>
+
+    <script>
+        function testMediaStream() {
+            const output = document.getElementById('output');
+            const callId = document.getElementById('callId').value;
+            
+            output.innerHTML = 'Connecting to /media-stream...<br>';
+            
+            // Replace with your ngrok URL
+            const ws = new WebSocket(`wss://ai-concierge.ngrok.dev/media-stream?call_id=${callId}`);
+            
+            ws.onopen = function() {
+                output.innerHTML += '✅ WebSocket connected to /media-stream!<br>';
+                output.innerHTML += 'This means the endpoint is working correctly.<br>';
+            };
+            
+            ws.onmessage = function(event) {
+                output.innerHTML += '📨 Received: ' + event.data + '<br>';
+            };
+            
+            ws.onerror = function(error) {
+                output.innerHTML += '❌ Error: ' + error + '<br>';
+                output.innerHTML += 'Check server logs for details.<br>';
+            };
+            
+            ws.onclose = function(event) {
+                output.innerHTML += `⚠️ Connection closed<br>`;
+                output.innerHTML += `  Code: ${event.code}<br>`;
+                output.innerHTML += `  Reason: ${event.reason}<br>`;
+            };
+        }
+    </script>
+</body>
+</html>
+
