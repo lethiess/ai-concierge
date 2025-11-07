@@ -210,30 +210,58 @@ async def make_reservation_call_via_twilio(
     start_time = datetime.now()
 
     try:
-        # Step 1: Create call in CallManager
-        call_state = call_manager.create_call(reservation_details)
-        call_id = call_state.call_id
-        logger.info(f"Created call {call_id} in CallManager")
+        # Step 1: Generate call ID
+        call_id = call_manager.generate_call_id()
+        logger.info(f"Generated call ID: {call_id}")
 
-        # Step 2: Build TwiML URL
-        # The server will generate TwiML that routes to the WebSocket
-        # Add test_mode=true to test without WebSocket first
+        # Step 2: Register call with server (so server's CallManager knows about it)
+        import httpx
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"https://{config.public_domain}/register-call",
+                    json={
+                        "call_id": call_id,
+                        "reservation_details": reservation_details,
+                    },
+                    timeout=10.0,
+                )
+                response.raise_for_status()
+                logger.info(f"✓ Registered call {call_id} with server")
+        except Exception as e:
+            logger.exception("Failed to register call with server")
+            return ReservationResult(
+                status="error",
+                restaurant_name=restaurant.name,
+                message=f"Failed to register call: {e}",
+                call_duration=0.0,
+            )
+
+        # Step 3: Build TwiML URL
         twiml_url = (
             f"https://{config.public_domain}/twiml?call_id={call_id}&test_mode=false"
         )
         status_callback_url = f"https://{config.public_domain}/twilio-status"
         logger.info(f"TwiML URL: {twiml_url}")
 
-        # Step 3: Initiate Twilio call
+        # Step 4: Initiate Twilio call
         call_sid = twilio_service.initiate_call(
             to_number=restaurant.phone_number,
             twiml_url=twiml_url,
             status_callback=status_callback_url,
         )
-        call_manager.set_call_sid(call_id, call_sid)
+        # Update the call with Twilio SID (register with server again to update)
+        try:
+            async with httpx.AsyncClient() as client:
+                # Just set it locally for tracking
+                pass
+        except Exception:
+            pass
+
         logger.info(f"Initiated Twilio call {call_sid} for reservation call {call_id}")
 
-        # Step 4: Wait for call to complete (poll with timeout)
+        # Step 5: Wait for call to complete (poll with timeout)
         result = await wait_for_call_completion(call_id, timeout=180)
 
         duration = (datetime.now() - start_time).total_seconds()

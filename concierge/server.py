@@ -19,7 +19,6 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Response, Query, Re
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-from concierge.agents.voice_agent import VoiceAgent
 from concierge.config import get_config
 from concierge.services.audio_converter import (
     decode_twilio_audio,
@@ -123,6 +122,38 @@ async def diagnostics():
     }
 
 
+@app.post("/register-call")
+async def register_call(request: Request):
+    """Register a call with reservation details before initiating it.
+
+    This allows the CLI (separate process) to register call details
+    that the server can later retrieve.
+    """
+    try:
+        data = await request.json()
+        call_id = data.get("call_id")
+        reservation_details = data.get("reservation_details")
+
+        if not call_id or not reservation_details:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "Missing call_id or reservation_details"},
+            )
+        call_manager = get_call_manager()
+        call_state = call_manager.create_call(
+            reservation_details=reservation_details, call_id=call_id
+        )
+
+        logger.info(f"✓ Registered call {call_id} with reservation details")
+        logger.info(f"  Restaurant: {reservation_details.get('restaurant_name')}")
+
+        return {"status": "registered", "call_id": call_state.call_id}
+
+    except Exception as e:
+        logger.exception("Error registering call")
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
 @app.api_route("/twiml", methods=["GET", "POST"])
 async def generate_twiml(
     call_id: str = Query(..., description="Unique call ID"),
@@ -159,19 +190,46 @@ async def generate_twiml(
         logger.info(f"TwiML Response:\n{twiml}")
         return Response(content=twiml, media_type="text/xml")
 
+    # Get reservation details from CallManager to pass as custom parameters
+    call_manager = get_call_manager()
+    call_state = call_manager.get_call(call_id)
+
+    # Prepare custom parameters to send to WebSocket handler
+    # These will be available in the 'start' event
+    custom_params = {}
+    if call_state:
+        reservation_details = call_state.reservation_details
+        custom_params = {
+            "restaurant_name": reservation_details.get("restaurant_name", ""),
+            "party_size": str(reservation_details.get("party_size", "")),
+            "date": reservation_details.get("date", ""),
+            "time": reservation_details.get("time", ""),
+            "customer_name": reservation_details.get("customer_name", ""),
+        }
+        logger.info(
+            f"Passing reservation details via custom parameters: {custom_params}"
+        )
+
+    # Build parameter string for TwiML
+    " ".join([f'{k}="{v}"' for k, v in custom_params.items() if v])
+
     # Use wss:// for secure WebSocket connection
-    websocket_url = f"wss://{config.public_domain}/media-stream?call_id={call_id}"
+    websocket_url = f"wss://{config.public_domain}/media-stream"
 
     # TwiML with Stream parameters:
     # - track="inbound_track" is the only valid value for <Connect> verb
-    #   (see https://www.twilio.com/docs/api/errors/31941)
-    # - This captures audio from the caller (restaurant staff)
-    # - Added <Say> before <Connect> to ensure call is fully established
+    # - Custom parameters are sent in the 'start' event to the WebSocket
     twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Say>Connecting you to our reservation system.</Say>
     <Connect>
-        <Stream url="{websocket_url}" track="inbound_track" />
+        <Stream url="{websocket_url}" track="inbound_track">
+            <Parameter name="restaurant_name" value="{custom_params.get('restaurant_name', '')}" />
+            <Parameter name="party_size" value="{custom_params.get('party_size', '')}" />
+            <Parameter name="date" value="{custom_params.get('date', '')}" />
+            <Parameter name="time" value="{custom_params.get('time', '')}" />
+            <Parameter name="customer_name" value="{custom_params.get('customer_name', '')}" />
+        </Stream>
     </Connect>
 </Response>"""
 
@@ -313,135 +371,33 @@ async def test_websocket(websocket: WebSocket):
 async def handle_media_stream(websocket: WebSocket):
     """Handle Twilio Media Stream WebSocket connection.
 
-    This endpoint:
-    1. Accepts WebSocket connection from Twilio
-    2. Gets reservation details for this call
-    3. Creates RealtimeAgent configured for the reservation
-    4. Creates RealtimeRunner to manage the agent session
-    5. Bridges audio bidirectionally between Twilio and OpenAI
+    Based on the official OpenAI example:
+    https://github.com/openai/openai-agents-python/tree/main/examples/realtime/twilio
 
-    Args:
-        websocket: WebSocket connection from Twilio
-
-    Note:
-        Twilio strips query parameters from Stream URLs, so we get call_id
-        from the 'start' event instead.
+    Reservation details are passed via Twilio custom parameters in the 'start' event.
     """
-    call_id = "unknown"
+    logger.info("=" * 70)
+    logger.info("🔌 Twilio Media Stream WebSocket connection received")
+    logger.info(f"  Client: {websocket.client}")
+    logger.info("=" * 70)
 
     try:
-        # Extract call_id from query params (Twilio strips these, so usually empty)
-        query_params = dict(websocket.query_params)
-        call_id = query_params.get("call_id", "unknown")
+        # Import TwilioHandler
+        from concierge.twilio_handler import TwilioHandler
 
-        logger.info("=" * 70)
-        logger.info("🔌 MEDIA STREAM WebSocket connection attempt from Twilio")
-        logger.info(f"  Call ID from URL: {call_id}")
-        logger.info(f"  Client: {websocket.client}")
-        logger.info(f"  Query params: {query_params}")
-        logger.info("=" * 70)
+        # Create handler - it will extract reservation details from 'start' event
+        handler = TwilioHandler(websocket)
 
-        # Accept the WebSocket connection immediately
-        # Twilio will send a 'start' event with call details
-        await websocket.accept()
-        logger.info("✓✓✓ WebSocket ACCEPTED")
+        # Start and wait for completion
+        await handler.start()
+        await handler.wait_until_done()
 
-        # Twilio strips query params, so we use the most recent call as fallback
-        # The 'start' event (received by handle_twilio_to_realtime) will have the CallSid
-        call_manager = get_call_manager()
-
-        # Try to get call by URL parameter first
-        if call_id != "unknown":
-            call_state = call_manager.get_call(call_id)
-            if call_state:
-                logger.info(f"✓ Found call by call_id from URL: {call_id}")
-            else:
-                logger.warning(f"Call {call_id} not found, using fallback")
-                call_id = "unknown"
-
-        # Fallback: Use the most recent call
-        # This works because we create the call immediately before initiating it
-        if call_id == "unknown":
-            recent_calls = list(call_manager.get_all_calls())
-            if recent_calls:
-                # Get the most recent call (last in list)
-                call_state = recent_calls[-1]
-                call_id = call_state.call_id
-                logger.info(f"✓ Using most recent call: {call_id}")
-            else:
-                logger.error("❌ No calls found in CallManager")
-                await websocket.close(code=1008, reason="No active calls")
-                return
-
-    except Exception as e:
-        logger.error(f"❌ Failed to accept WebSocket: {e}", exc_info=True)
-        with suppress(Exception):
-            await websocket.close(code=1011, reason="Internal error during handshake")
-        return
-
-    logger.info(f"🎯 Proceeding with call {call_id}")
-
-    # Verify call state exists
-    if not call_state:
-        call_state = call_manager.get_call(call_id)
-
-    if not call_state:
-        logger.error(f"❌ Call {call_id} not found in call manager")
-        await websocket.close(code=1008, reason="Call not found")
-        return
-
-    # Update status to in_progress
-    call_manager.update_status(call_id, "in_progress")
-
-    try:
-        # Create RealtimeAgent for this call
-        voice_agent_instance = VoiceAgent(call_state.reservation_details)
-        voice_agent = voice_agent_instance.create()
-        logger.info(f"Created RealtimeAgent for call {call_id}")
-
-        # Get configuration
-        config = get_config()
-
-        # Create RealtimeRunner with proper configuration
-        # Reference: https://openai.github.io/openai-agents-python/ref/realtime/runner/
-        runner = RealtimeRunner(
-            starting_agent=voice_agent,
-            config={
-                "model_settings": {
-                    "model_name": config.realtime_model,
-                    "voice": config.realtime_voice,
-                    "modalities": ["audio", "text"],
-                    "input_audio_format": "pcm16",
-                    "output_audio_format": "pcm16",
-                    "input_audio_transcription": {"model": "whisper-1"},
-                    "turn_detection": {
-                        "type": "server_vad",
-                        "threshold": 0.5,
-                        "prefix_padding_ms": 300,
-                        "silence_duration_ms": 500,
-                    },
-                    "temperature": 0.8,
-                }
-            },
-        )
-        logger.info(
-            f"Created RealtimeRunner for call {call_id} with voice: {config.realtime_voice}"
-        )
-
-        # Bridge audio streams between Twilio and OpenAI
-        await bridge_audio_streams(websocket, runner, call_state, call_manager)
-
-        # Call completed successfully
-        call_manager.update_status(call_id, "completed")
-        logger.info(f"Call {call_id} completed successfully")
+        logger.info("✓ Call completed")
 
     except WebSocketDisconnect:
-        logger.info(f"WebSocket disconnected for call {call_id}")
-        call_manager.update_status(call_id, "completed")
-
-    except Exception as e:
-        logger.exception(f"Error in media stream for call {call_id}")
-        call_manager.set_error(call_id, str(e))
+        logger.info("WebSocket disconnected")
+    except Exception:
+        logger.exception("Error in media stream handler")
         with suppress(Exception):
             await websocket.close(code=1011, reason="Internal error")
 
@@ -679,6 +635,14 @@ def run_server():
 
     # Get config
     config = get_config()
+
+    # Ensure OpenAI API key is available to the SDK via environment variable
+    # The SDK reads directly from os.environ, not from our Config
+    import os
+
+    if config.openai_api_key and "OPENAI_API_KEY" not in os.environ:
+        os.environ["OPENAI_API_KEY"] = config.openai_api_key
+        logger.info("✓ OpenAI API key loaded into environment")
 
     # Run server
     uvicorn.run(
