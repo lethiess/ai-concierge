@@ -87,16 +87,18 @@ Customer name: {customer_name}
 {f"Special requests: {special_requests}" if special_requests else ""}
 
 **Instructions:**
-1. **Start speaking immediately** when the call connects - greet the person who answers
+1. **When you receive "start", immediately begin speaking** - greet the restaurant and introduce yourself
 2. State that you're calling to make a reservation
-3. Provide the date, time, and party size
+3. Provide the date, time, and party size clearly
 4. Give the customer's name when asked
 5. Mention any special requests if applicable
 6. Try to get a confirmation number
 7. If the requested time is unavailable, ask about nearby time slots
-8. Thank them and end the call politely
+8. Listen carefully to the restaurant's responses and respond naturally
+9. Thank them and end the call politely when the reservation is confirmed or completed
 
-**CRITICAL**: Begin speaking as soon as the call connects. Don't wait for the other person to speak first.
+**CRITICAL**: When triggered with "start", immediately begin the conversation by greeting the restaurant.
+Example: "Hello, I'd like to make a reservation for {party_size} people on {date} at {time}."
 
 **Important:**
 - Be natural and conversational

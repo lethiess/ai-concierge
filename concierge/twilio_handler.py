@@ -8,6 +8,7 @@ import asyncio
 import base64
 import json
 import logging
+import os
 import time
 from typing import Any
 
@@ -90,26 +91,27 @@ class TwilioHandler:
         voice_agent_instance = VoiceAgent(self.reservation_details)
         agent = voice_agent_instance.create()
 
-        # Create RealtimeRunner
+        # Create RealtimeRunner (no config in constructor - just the agent)
         runner = RealtimeRunner(agent)
 
-        # Start the session with Twilio-compatible audio format
+        # Get API key
+        api_key = config.openai_api_key or os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY is required")
+
+        # Start the session with model_config (following official OpenAI SDK Twilio example)
         self.session = await runner.run(
             model_config={
+                "api_key": api_key,
                 "initial_model_settings": {
-                    "model_name": config.realtime_model,
-                    "voice": config.realtime_voice,
-                    "modalities": ["audio", "text"],
-                    "input_audio_format": "g711_ulaw",  # Twilio format
-                    "output_audio_format": "g711_ulaw",  # Twilio format
-                    "input_audio_transcription": {"model": "whisper-1"},
+                    "input_audio_format": "g711_ulaw",
+                    "output_audio_format": "g711_ulaw",
                     "turn_detection": {
                         "type": "server_vad",
                         "threshold": 0.5,
                         "prefix_padding_ms": 300,
                         "silence_duration_ms": 500,
                     },
-                    "temperature": 0.8,
                 },
                 "playback_tracker": self.playback_tracker,
             }
@@ -125,6 +127,11 @@ class TwilioHandler:
         # (message loop already started earlier to get 'start' event)
         self._realtime_session_task = asyncio.create_task(self._realtime_session_loop())
         self._buffer_flush_task = asyncio.create_task(self._buffer_flush_loop())
+
+        # Trigger the agent to start speaking immediately
+        # This is critical for the agent to begin the conversation
+        logger.info("🎬 Triggering agent to start speaking")
+        await self.session.send_message("start")  # Trigger initial greeting
 
     async def wait_until_done(self) -> None:
         """Wait until the session is complete."""
@@ -157,6 +164,7 @@ class TwilioHandler:
         if event.type == "audio":
             # Send audio to Twilio
             base64_audio = base64.b64encode(event.audio.data).decode("utf-8")
+            logger.info(f"🔊 Sending {len(event.audio.data)} bytes of audio to Twilio")
             await self.twilio_websocket.send_text(
                 json.dumps(
                     {
@@ -254,12 +262,18 @@ class TwilioHandler:
             try:
                 # Decode base64 audio from Twilio (µ-law format)
                 ulaw_bytes = base64.b64decode(payload)
+                logger.debug(
+                    f"🎤 Received {len(ulaw_bytes)} bytes from Twilio, buffer size: {len(self._audio_buffer)}"
+                )
 
                 # Add to buffer
                 self._audio_buffer.extend(ulaw_bytes)
 
                 # Send buffered audio if we have enough data
                 if len(self._audio_buffer) >= self.BUFFER_SIZE_BYTES:
+                    logger.debug(
+                        f"📤 Flushing {len(self._audio_buffer)} bytes to OpenAI"
+                    )
                     await self._flush_audio_buffer()
 
             except Exception:
