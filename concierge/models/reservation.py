@@ -5,6 +5,8 @@ from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from concierge.models.restaurant import Restaurant
+
 
 class ReservationStatus(str, Enum):
     """Status of a reservation request."""
@@ -13,17 +15,6 @@ class ReservationStatus(str, Enum):
     CONFIRMED = "confirmed"
     REJECTED = "rejected"
     ERROR = "error"
-
-
-class Restaurant(BaseModel):
-    """Restaurant information."""
-
-    model_config = ConfigDict(frozen=True)
-
-    name: str = Field(..., description="Restaurant name")
-    phone_number: str = Field(..., description="Restaurant phone number")
-    address: str | None = Field(None, description="Restaurant address")
-    cuisine_type: str | None = Field(None, description="Type of cuisine")
 
 
 class ReservationRequest(BaseModel):
@@ -56,3 +47,15 @@ class ReservationResult(BaseModel):
     timestamp: datetime = Field(
         default_factory=datetime.now, description="When the result was created"
     )
+
+
+class ReservationDetails(BaseModel):
+    """Structured output for parsed reservation request."""
+
+    restaurant_name: str
+    party_size: int
+    date: str
+    time: str
+    user_name: str | None = None
+    user_phone: str | None = None
+    special_requests: str | None = None

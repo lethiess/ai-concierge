@@ -4,7 +4,6 @@ import logging
 from collections.abc import Callable
 
 from agents import Agent, function_tool
-from pydantic import BaseModel
 
 from concierge.config import get_config
 from concierge.models import Restaurant
@@ -12,18 +11,6 @@ from concierge.prompts import load_prompt
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
-
-
-class ReservationDetails(BaseModel):
-    """Structured output for parsed reservation request."""
-
-    restaurant_name: str
-    party_size: int
-    date: str
-    time: str
-    user_name: str | None = None
-    user_phone: str | None = None
-    special_requests: str | None = None
 
 
 class ReservationAgent:

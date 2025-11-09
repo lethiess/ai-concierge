@@ -5,27 +5,15 @@ import logging
 from datetime import datetime
 
 from agents.realtime import RealtimeAgent
-from pydantic import BaseModel
 
 from concierge.config import get_config
-from concierge.models import Restaurant
+from concierge.models import Restaurant, VoiceCallResult
 from concierge.prompts import load_prompt
 from concierge.services.call_manager import get_call_manager
 from concierge.services.twilio_service import TwilioService
 import contextlib
 
 logger = logging.getLogger(__name__)
-
-
-class ReservationResult(BaseModel):
-    """Structured output for reservation result."""
-
-    status: str  # "confirmed", "pending", "rejected", "error"
-    restaurant_name: str
-    confirmation_number: str | None = None
-    message: str
-    call_duration: float | None = None
-    call_id: str | None = None
 
 
 class VoiceAgent:
@@ -124,7 +112,7 @@ class VoiceAgent:
 
 async def make_reservation_call_via_twilio(
     reservation_details: dict, restaurant: Restaurant
-) -> ReservationResult:
+) -> VoiceCallResult:
     """Make a real-time reservation call using Twilio and OpenAI Realtime API.
 
     This function:
@@ -139,7 +127,7 @@ async def make_reservation_call_via_twilio(
         restaurant: Restaurant to call
 
     Returns:
-        ReservationResult with the outcome of the call
+        VoiceCallResult with the outcome of the call
 
     Note:
         This requires:
@@ -156,7 +144,7 @@ async def make_reservation_call_via_twilio(
     # Check if Twilio is configured
     if not twilio_service.is_configured():
         logger.error("Twilio not configured - returning simulated result")
-        return ReservationResult(
+        return VoiceCallResult(
             status="error",
             restaurant_name=restaurant.name,
             message="Twilio not configured - returning simulated result",
@@ -170,7 +158,7 @@ async def make_reservation_call_via_twilio(
             "PUBLIC_DOMAIN not configured - cannot make call. "
             "Please set PUBLIC_DOMAIN in .env (e.g., your ngrok URL)"
         )
-        return ReservationResult(
+        return VoiceCallResult(
             status="error",
             restaurant_name=restaurant.name,
             message="Server not configured: PUBLIC_DOMAIN must be set for Twilio webhooks",
@@ -214,7 +202,7 @@ async def make_reservation_call_via_twilio(
         with contextlib.suppress(NameError):
             error_call_id = call_id
 
-        result = ReservationResult(
+        result = VoiceCallResult(
             status="error",
             restaurant_name=restaurant.name,
             message=f"Error making call: {e}",
@@ -227,7 +215,7 @@ async def make_reservation_call_via_twilio(
 
 async def wait_for_call_completion(
     call_id: str, timeout: int = 180, poll_interval: int = 2
-) -> ReservationResult:
+) -> VoiceCallResult:
     """Wait for a call to complete by polling CallManager.
 
     Args:
@@ -236,7 +224,7 @@ async def wait_for_call_completion(
         poll_interval: Seconds between status checks
 
     Returns:
-        ReservationResult
+        VoiceCallResult
 
     Raises:
         TimeoutError: If call doesn't complete within timeout
@@ -296,7 +284,7 @@ async def wait_for_call_completion(
                 status = "pending"
                 message = "Call completed but no confirmation number received. Please check with restaurant."
 
-            return ReservationResult(
+            return VoiceCallResult(
                 status=status,
                 restaurant_name=call_state.reservation_details.get(
                     "restaurant_name", "Unknown"
@@ -308,7 +296,7 @@ async def wait_for_call_completion(
 
         if call_state.status == "failed":
             logger.error(f"Call {call_id} failed: {call_state.error_message}")
-            return ReservationResult(
+            return VoiceCallResult(
                 status="error",
                 restaurant_name=call_state.reservation_details.get(
                     "restaurant_name", "Unknown"
@@ -322,7 +310,7 @@ async def wait_for_call_completion(
     await call_manager.update_status(call_id, "failed")
     call_manager.set_error(call_id, f"Call timed out after {timeout}s")
 
-    return ReservationResult(
+    return VoiceCallResult(
         status="error",
         restaurant_name=call_manager.get_call(call_id).reservation_details.get(
             "restaurant_name", "Unknown"

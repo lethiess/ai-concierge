@@ -2,34 +2,11 @@
 
 import logging
 from agents import Agent, Runner
-from pydantic import BaseModel, Field
 from concierge.config import get_config
+from concierge.models import ConfirmedReservationDetails
 from concierge.prompts import load_prompt
 
 logger = logging.getLogger(__name__)
-
-
-class ConfirmedReservationDetails(BaseModel):
-    """Extracted details from a completed reservation call."""
-
-    confirmed_time: str | None = Field(
-        None, description="The ACTUAL confirmed time (e.g., '20:00', '8:00 PM')"
-    )
-    confirmed_date: str | None = Field(
-        None, description="The confirmed date if different from requested"
-    )
-    confirmation_number: str | None = Field(
-        None, description="The confirmation number provided by restaurant"
-    )
-    party_size: int | None = Field(None, description="Number of people")
-    customer_name: str | None = Field(None, description="Name for the reservation")
-    restaurant_notes: str | None = Field(
-        None, description="Any special notes or instructions from restaurant"
-    )
-    was_modified: bool = Field(
-        False,
-        description="True if the reservation details were changed from original request",
-    )
 
 
 class TranscriptAnalysisAgent:
