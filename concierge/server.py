@@ -282,18 +282,15 @@ async def generate_twiml(call_id: str = Query(..., description="Unique call ID")
     return Response(content=twiml, media_type="text/xml")
 
 
-@app.api_route("/twilio-status", methods=["GET", "POST"])
+@app.post("/twilio-status")
 async def twilio_status_callback(request: Request):
     """Handle Twilio status callbacks for debugging.
 
     This endpoint receives updates about call status from Twilio.
     """
-    # Get all data from the request
-    if request.method == "POST":
-        form_data = await request.form()
-        data = dict(form_data)
-    else:
-        data = dict(request.query_params)
+    # Get form data from POST request
+    form_data = await request.form()
+    data = dict(form_data)
 
     # Log all received data for debugging
     logger.info("=" * 70)

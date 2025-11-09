@@ -382,7 +382,7 @@ class TwilioHandler:
                         logger.info(
                             f"  - Transcript lines: {len(call_state.transcript)}"
                         )
-                        logger.info(
+                        logger.debug(
                             f"  - Full transcript: {' | '.join(call_state.transcript)}"
                         )
                         logger.info(
