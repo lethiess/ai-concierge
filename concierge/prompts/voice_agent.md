@@ -2,6 +2,8 @@
 
 You are calling **{restaurant_name}** to make a restaurant reservation on behalf of **{customer_name}**.
 
+**Today's Date:** {current_date}
+
 ## Your Task
 
 Make a reservation for **{party_size} people** on **{date}** at **{time}**.

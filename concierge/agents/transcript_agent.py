@@ -1,0 +1,151 @@
+"""Agent for analyzing call transcripts and extracting confirmed reservation details."""
+
+import logging
+from agents import Agent, Runner
+from pydantic import BaseModel, Field
+from concierge.config import get_config
+
+logger = logging.getLogger(__name__)
+
+
+class ConfirmedReservationDetails(BaseModel):
+    """Extracted details from a completed reservation call."""
+
+    confirmed_time: str | None = Field(
+        None, description="The ACTUAL confirmed time (e.g., '20:00', '8:00 PM')"
+    )
+    confirmed_date: str | None = Field(
+        None, description="The confirmed date if different from requested"
+    )
+    confirmation_number: str | None = Field(
+        None, description="The confirmation number provided by restaurant"
+    )
+    party_size: int | None = Field(None, description="Number of people")
+    customer_name: str | None = Field(None, description="Name for the reservation")
+    restaurant_notes: str | None = Field(
+        None, description="Any special notes or instructions from restaurant"
+    )
+    was_modified: bool = Field(
+        False,
+        description="True if the reservation details were changed from original request",
+    )
+
+
+class TranscriptAnalysisAgent:
+    """Agent that analyzes call transcripts to extract confirmed reservation details.
+
+    This agent reads the conversation between the voice agent and restaurant staff,
+    understands the context, and extracts the ACTUAL confirmed details rather than
+    the originally requested details.
+    """
+
+    def __init__(self):
+        self.config = get_config()
+        self._agent = None
+
+    def create(self) -> Agent:
+        """Create the transcript analysis agent."""
+        if self._agent is not None:
+            return self._agent
+
+        instructions = """You are a transcript analysis specialist for a restaurant reservation system.
+
+Your job is to carefully read the conversation transcript between our AI voice agent and restaurant staff,
+and extract the ACTUAL CONFIRMED reservation details.
+
+**Important**:
+- The ORIGINALLY REQUESTED details may be different from what was ACTUALLY CONFIRMED
+- Focus on what the restaurant AGREED TO, not what was initially requested
+- Look for phrases like "we have a table at...", "the reservation is for...", "confirmation number is...", "bestätigungsnummer ist...", "referenznummer ist..."
+- If the restaurant proposed an alternative time and it was accepted, use that alternative time
+- Extract the confirmation number EXACTLY as stated by the restaurant (e.g., "0815", "ABC123")
+- Handle both English and German language in transcripts
+
+**Context to look for**:
+1. Did the restaurant offer a different time than requested? If yes, was it accepted?
+2. What confirmation number did the restaurant provide? Look for variations like:
+   - "confirmation number is 0815"
+   - "bestätigungsnummer ist 0815"
+   - "referenznummer ist 0815"
+   - "the number is 0815"
+3. Were there any special notes or conditions?
+4. What is the final agreed-upon time? (Look near the end of the conversation)
+
+**Important**:
+- Confirmation numbers can be numeric (0815, 1234) or alphanumeric (ABC123)
+- Times can be in 12-hour format (8 PM) or 24-hour format (20:00)
+- Mark was_modified=True if ANY details changed from the original request
+
+Be precise and only extract information that was explicitly confirmed in the conversation.
+Pay special attention to the LATTER PART of the conversation where final confirmations occur."""
+
+        self._agent = Agent(
+            name="Transcript Analysis Agent",
+            model=self.config.agent_model,
+            instructions=instructions,
+            output_type=ConfirmedReservationDetails,
+        )
+
+        logger.info("Transcript Analysis Agent created")
+        return self._agent
+
+    async def analyze_transcript(
+        self, transcript_lines: list[str], original_details: dict
+    ) -> ConfirmedReservationDetails:
+        """Analyze a transcript and extract confirmed details.
+
+        Args:
+            transcript_lines: List of transcript lines from the call
+            original_details: The originally requested reservation details
+
+        Returns:
+            ConfirmedReservationDetails with extracted information
+        """
+        if not self._agent:
+            self.create()
+
+        # Format transcript for analysis
+        formatted_transcript = "\n".join(transcript_lines)
+
+        # Create analysis prompt
+        analysis_prompt = f"""Analyze this restaurant reservation call transcript.
+
+ORIGINALLY REQUESTED:
+- Time: {original_details.get('time')}
+- Date: {original_details.get('date')}
+- Party size: {original_details.get('party_size')}
+- Name: {original_details.get('customer_name', 'Not specified')}
+
+CONVERSATION TRANSCRIPT:
+{formatted_transcript}
+
+Extract the ACTUAL CONFIRMED details from this conversation.
+Focus on what the restaurant AGREED TO, not what was originally requested.
+Pay special attention to confirmation numbers mentioned near the end of the conversation."""
+
+        logger.info("Analyzing transcript with LLM...")
+
+        runner = Runner()
+        result = await runner.run(starting_agent=self._agent, input=analysis_prompt)
+
+        # The output should be a ConfirmedReservationDetails object
+        confirmed_details = result.final_output
+
+        logger.info("✓ LLM analysis complete:")
+        logger.info(f"  - Confirmed time: {confirmed_details.confirmed_time}")
+        logger.info(f"  - Confirmation number: {confirmed_details.confirmation_number}")
+        logger.info(f"  - Was modified: {confirmed_details.was_modified}")
+
+        return confirmed_details
+
+
+# Singleton instance
+_transcript_agent = None
+
+
+def get_transcript_agent() -> TranscriptAnalysisAgent:
+    """Get or create the transcript analysis agent."""
+    global _transcript_agent
+    if _transcript_agent is None:
+        _transcript_agent = TranscriptAnalysisAgent()
+    return _transcript_agent

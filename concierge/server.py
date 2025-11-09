@@ -174,6 +174,12 @@ async def process_request(request: Request):
         runner = Runner()
         result = await runner.run(starting_agent=orchestrator_agent, input=user_input)
 
+        # Debug: Log result object structure
+        logger.info(f"🔍 Result type: {type(result).__name__}")
+        logger.info(f"🔍 Result attributes: {dir(result)}")
+        if hasattr(result, "__dict__"):
+            logger.info(f"🔍 Result dict: {result.__dict__.keys()}")
+
         # Extract the final output
         final_output = ""
         if hasattr(result, "final_output"):
@@ -241,10 +247,7 @@ async def register_call(request: Request):
 
 
 @app.api_route("/twiml", methods=["GET", "POST"])
-async def generate_twiml(
-    call_id: str = Query(..., description="Unique call ID"),
-    test_mode: bool = Query(False, description="Use simple test TwiML"),
-):
+async def generate_twiml(call_id: str = Query(..., description="Unique call ID")):
     """Generate TwiML to route Twilio call to Media Stream WebSocket.
 
     Args:
@@ -263,18 +266,6 @@ async def generate_twiml(
             media_type="text/plain",
             status_code=500,
         )
-
-    # Test mode: Simple TwiML without WebSocket to verify basic functionality
-    if test_mode:
-        twiml = """<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-    <Say>Hello, this is a test from AI Concierge. The webhook is working correctly.</Say>
-    <Pause length="2"/>
-    <Say>If you hear this message, your server is reachable from Twilio.</Say>
-</Response>"""
-        logger.info(f"Generated TEST TwiML for call {call_id}")
-        logger.info(f"TwiML Response:\n{twiml}")
-        return Response(content=twiml, media_type="text/xml")
 
     # Get reservation details from CallManager to pass as custom parameters
     call_manager = get_call_manager()

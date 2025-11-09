@@ -11,20 +11,26 @@ from concierge.agents.reservation_agent import (
     create_reservation_agent,
 )
 from concierge.agents.tools import find_restaurant
+from concierge.agents.transcript_agent import (
+    TranscriptAnalysisAgent,
+    ConfirmedReservationDetails,
+    get_transcript_agent,
+)
 from concierge.agents.voice_agent import (
     ReservationResult,
     VoiceAgent,
     create_voice_agent,
     make_reservation_call_via_twilio,
-    simulate_reservation_call,
 )
 
 __all__ = [
+    "ConfirmedReservationDetails",
     # Classes
     "OrchestratorAgent",
     "ReservationAgent",
     "ReservationDetails",
     "ReservationResult",
+    "TranscriptAnalysisAgent",
     "VoiceAgent",
     # Factory functions (backward compatibility)
     "create_orchestrator_agent",
@@ -34,6 +40,6 @@ __all__ = [
     "find_restaurant",
     # Utilities
     "format_reservation_result",
+    "get_transcript_agent",
     "make_reservation_call_via_twilio",
-    "simulate_reservation_call",
 ]

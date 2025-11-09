@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from concierge.config import get_config
 from concierge.models import Restaurant
 from concierge.prompts import load_prompt
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -133,10 +134,14 @@ class ReservationAgent:
                     "confirmation_number": result.confirmation_number,
                     "message": result.message,
                     "call_duration": result.call_duration,
+                    "call_id": result.call_id,
                 }
 
-            # Load instructions from template
-            instructions = load_prompt("reservation_agent")
+            # Load instructions from template with current date/time context
+            current_datetime = datetime.now().strftime("%A, %B %d, %Y at %I:%M %p")
+            instructions = load_prompt(
+                "reservation_agent", current_datetime=current_datetime
+            )
 
             self._agent = Agent(
                 name="Reservation Agent",

@@ -12,6 +12,7 @@ from concierge.models import Restaurant
 from concierge.prompts import load_prompt
 from concierge.services.call_manager import get_call_manager
 from concierge.services.twilio_service import TwilioService
+import contextlib
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,7 @@ class ReservationResult(BaseModel):
     confirmation_number: str | None = None
     message: str
     call_duration: float | None = None
+    call_id: str | None = None
 
 
 class VoiceAgent:
@@ -84,6 +86,9 @@ class VoiceAgent:
             if special_requests:
                 special_requests_text = f"**Special requests:** {special_requests}"
 
+            # Get current date for context
+            current_date = datetime.now().strftime("%A, %B %d, %Y")
+
             # Load and format prompt from template
             instructions = load_prompt(
                 "voice_agent",
@@ -93,6 +98,7 @@ class VoiceAgent:
                 time=time,
                 customer_name=customer_name,
                 special_requests=special_requests_text,
+                current_date=current_date,
             )
 
             # Create the RealtimeAgent with minimal configuration
@@ -173,12 +179,13 @@ async def make_reservation_call_via_twilio(
 
     # Check if Twilio is configured
     if not twilio_service.is_configured():
-        logger.warning("Twilio not configured - returning simulated result")
-        return simulate_reservation_call(
-            restaurant,
-            reservation_details["party_size"],
-            reservation_details["date"],
-            reservation_details["time"],
+        logger.error("Twilio not configured - returning simulated result")
+        return ReservationResult(
+            status="error",
+            restaurant_name=restaurant.name,
+            message="Twilio not configured - returning simulated result",
+            call_duration=0.0,
+            call_id=None,
         )
 
     # Check if server is configured
@@ -192,6 +199,7 @@ async def make_reservation_call_via_twilio(
             restaurant_name=restaurant.name,
             message="Server not configured: PUBLIC_DOMAIN must be set for Twilio webhooks",
             call_duration=0.0,
+            call_id=None,
         )
 
     start_time = datetime.now()
@@ -203,9 +211,7 @@ async def make_reservation_call_via_twilio(
         logger.info(f"✓ Created call {call_id} in CallManager")
 
         # Step 2: Build TwiML URL
-        twiml_url = (
-            f"https://{config.public_domain}/twiml?call_id={call_id}&test_mode=false"
-        )
+        twiml_url = f"https://{config.public_domain}/twiml?call_id={call_id}"
         status_callback_url = f"https://{config.public_domain}/twilio-status"
         logger.info(f"TwiML URL: {twiml_url}")
 
@@ -227,11 +233,17 @@ async def make_reservation_call_via_twilio(
         logger.exception("Error making realtime reservation call")
         duration = (datetime.now() - start_time).total_seconds()
 
+        # Try to get call_id if it was created before the error
+        error_call_id = None
+        with contextlib.suppress(NameError):
+            error_call_id = call_id
+
         result = ReservationResult(
             status="error",
             restaurant_name=restaurant.name,
             message=f"Error making call: {e}",
             call_duration=duration,
+            call_id=error_call_id,
         )
 
     return result
@@ -270,6 +282,36 @@ async def wait_for_call_completion(
         if call_state.status == "completed":
             logger.info(f"Call {call_id} completed successfully")
 
+            # Wait a bit for LLM transcript analysis to complete
+            # The analysis runs async in update_status(), so we need to give it time
+            max_analysis_wait = 10  # seconds
+            analysis_elapsed = 0
+
+            while analysis_elapsed < max_analysis_wait:
+                # Check if transcript analysis has completed by looking for the confirmed_time field
+                # which is only set by the LLM analysis
+                if "confirmed_time" in call_state.reservation_details:
+                    logger.info(
+                        "✓ Transcript analysis completed, proceeding with result"
+                    )
+                    break
+
+                # Also break if we have a confirmation number (analysis might be done)
+                if call_state.confirmation_number:
+                    logger.info("✓ Confirmation number present, proceeding with result")
+                    break
+
+                await asyncio.sleep(0.5)  # Check every 500ms
+                analysis_elapsed += 0.5
+
+                # Refresh call state
+                call_state = call_manager.get_call(call_id)
+
+            if analysis_elapsed >= max_analysis_wait:
+                logger.warning(
+                    f"⚠ Transcript analysis did not complete within {max_analysis_wait}s, proceeding anyway"
+                )
+
             # Determine status based on confirmation number
             if call_state.confirmation_number:
                 status = "confirmed"
@@ -285,6 +327,7 @@ async def wait_for_call_completion(
                 ),
                 confirmation_number=call_state.confirmation_number,
                 message=message,
+                call_id=call_id,
             )
 
         if call_state.status == "failed":
@@ -295,11 +338,12 @@ async def wait_for_call_completion(
                     "restaurant_name", "Unknown"
                 ),
                 message=f"Call failed: {call_state.error_message}",
+                call_id=call_id,
             )
 
     # Timeout
     logger.warning(f"Call {call_id} timed out after {timeout}s")
-    call_manager.update_status(call_id, "failed")
+    await call_manager.update_status(call_id, "failed")
     call_manager.set_error(call_id, f"Call timed out after {timeout}s")
 
     return ReservationResult(
@@ -308,31 +352,5 @@ async def wait_for_call_completion(
             "restaurant_name", "Unknown"
         ),
         message=f"Call timed out after {timeout} seconds",
-    )
-
-
-def simulate_reservation_call(
-    restaurant: Restaurant, party_size: int, date: str, time: str
-) -> ReservationResult:
-    """Simulate a reservation call when Twilio is not configured.
-
-    Args:
-        restaurant: The restaurant information
-        party_size: Number of people
-        date: Reservation date
-        time: Reservation time
-
-    Returns:
-        Simulated ReservationResult
-    """
-    logger.info("Simulating reservation call (Twilio not configured)")
-
-    return ReservationResult(
-        status="confirmed",
-        restaurant_name=restaurant.name,
-        confirmation_number=f"DEMO-SIM-{int(datetime.now().timestamp())}",
-        message=f"[SIMULATED] Reservation confirmed at {restaurant.name} for {party_size} people on {date} at {time}. "
-        "Note: Twilio is not configured, so no actual call was made. "
-        "In production, this would use OpenAI Realtime API + Twilio Media Streams for real-time voice conversation.",
-        call_duration=2.0,
+        call_id=call_id,
     )

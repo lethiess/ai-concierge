@@ -28,34 +28,18 @@ class ConciergeCLI:
         print("\n" + "=" * 60)
         print("AI CONCIERGE - Restaurant Reservation System")
         print("Powered by OpenAI Agents SDK + Realtime API")
-        print("=" * 60)
-
-        print("\nConfiguration Status:")
-        print(f"  Server URL: {self.config.server_url}")
-
-        # Check if server is reachable
-        try:
-            import httpx
-
-            response = httpx.get(f"{self.config.server_url}/health", timeout=5.0)
-            if response.status_code == 200:
-                print("  Server:     ✓ Connected")
-            else:
-                print("  Server:     ⚠ Reachable but not healthy")
-        except Exception:
-            print("  Server:     ✗ Not reachable")
-            print(f"\n⚠ WARNING: Cannot connect to server at {self.config.server_url}")
-            print("  Make sure the server is running:")
-            print("    python -m concierge.server")
-
+        print("\n" + "=" * 60)
+        print(f"agent model: {self.config.agent_model}")
+        print(f"realtime model: {self.config.realtime_model}")
+        print(f"realtime voice: {self.config.realtime_voice}")
         print("\n" + "=" * 60 + "\n")
 
     def run(self) -> None:
         """Run the CLI application."""
         print("Welcome! I can help you with restaurant reservations.\n")
         print("Examples:")
-        print('  "Book a table at Demo Restaurant for 4 people tomorrow at 7pm"')
-        print('  "Reserve 2 seats at Mario\'s Pizza on Friday at 6:30 PM"')
+        print('  "Book a table at Luigi\'s Pizza for 4 people tomorrow at 7pm"')
+        print('  "Reserve 2 seats at New York Bar at Friday at 10:00 PM"')
         print(
             '  "Table for 6 at The Steakhouse next Tuesday at 8pm under John Smith"\n'
         )

@@ -11,7 +11,7 @@ import logging
 import os
 import time
 from typing import Any
-
+from starlette.websockets import WebSocketDisconnect
 from fastapi import WebSocket
 
 from agents.realtime import (
@@ -142,10 +142,14 @@ class TwilioHandler:
 
     async def _realtime_session_loop(self) -> None:
         """Listen for events from the OpenAI Realtime session."""
+
         assert self.session is not None
         try:
             async for event in self.session:
                 await self._handle_realtime_event(event)
+        except WebSocketDisconnect:
+            # Normal - happens when call ends but agent still has audio to send
+            logger.info("Realtime session ended (WebSocket closed)")
         except Exception:
             logger.exception("Error in realtime session loop")
 
@@ -185,36 +189,44 @@ class TwilioHandler:
 
         if event.type == "audio":
             # Send audio to Twilio
-            base64_audio = base64.b64encode(event.audio.data).decode("utf-8")
-            logger.debug(f"Sending {len(event.audio.data)} bytes of audio to Twilio")
-            await self.twilio_websocket.send_text(
-                json.dumps(
-                    {
-                        "event": "media",
-                        "streamSid": self._stream_sid,
-                        "media": {"payload": base64_audio},
-                    }
+            try:
+                base64_audio = base64.b64encode(event.audio.data).decode("utf-8")
+                logger.debug(
+                    f"Sending {len(event.audio.data)} bytes of audio to Twilio"
                 )
-            )
-
-            # Send mark event for playback tracking
-            self._mark_counter += 1
-            mark_id = str(self._mark_counter)
-            self._mark_data[mark_id] = (
-                event.audio.item_id,
-                event.audio.content_index,
-                len(event.audio.data),
-            )
-
-            await self.twilio_websocket.send_text(
-                json.dumps(
-                    {
-                        "event": "mark",
-                        "streamSid": self._stream_sid,
-                        "mark": {"name": mark_id},
-                    }
+                await self.twilio_websocket.send_text(
+                    json.dumps(
+                        {
+                            "event": "media",
+                            "streamSid": self._stream_sid,
+                            "media": {"payload": base64_audio},
+                        }
+                    )
                 )
-            )
+
+                # Send mark event for playback tracking
+                self._mark_counter += 1
+                mark_id = str(self._mark_counter)
+                self._mark_data[mark_id] = (
+                    event.audio.item_id,
+                    event.audio.content_index,
+                    len(event.audio.data),
+                )
+
+                await self.twilio_websocket.send_text(
+                    json.dumps(
+                        {
+                            "event": "mark",
+                            "streamSid": self._stream_sid,
+                            "mark": {"name": mark_id},
+                        }
+                    )
+                )
+            except Exception as e:
+                # WebSocket might be closed if call ended
+                logger.debug(
+                    f"Could not send audio to Twilio (call may have ended): {e}"
+                )
 
         elif event.type == "audio_interrupted":
             logger.info("Audio interrupted - clearing Twilio buffer")
@@ -346,7 +358,7 @@ class TwilioHandler:
                     from concierge.services.call_manager import get_call_manager
 
                     call_manager = get_call_manager()
-                    call_manager.update_status(self.call_id, "in_progress")
+                    await call_manager.update_status(self.call_id, "in_progress")
 
                 # Signal that we have reservation details
                 self._start_event_received.set()
@@ -377,7 +389,7 @@ class TwilioHandler:
                             f"  - Confirmation number: {call_state.confirmation_number}"
                         )
 
-                    call_manager.update_status(self.call_id, "completed")
+                    await call_manager.update_status(self.call_id, "completed")
                     logger.info(f"✓ Updated call {self.call_id} status to completed")
         except Exception:
             logger.exception("Error handling Twilio message")
