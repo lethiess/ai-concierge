@@ -11,15 +11,28 @@ This server:
 import asyncio
 import json
 import logging
+import os
 from contextlib import asynccontextmanager, suppress
 
 import uvicorn
+from agents import Agent, Runner
 from agents.realtime import RealtimeRunner
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Response, Query, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
+from concierge.agents import (
+    OrchestratorAgent,
+    ReservationAgent,
+    format_reservation_result,
+)
+from concierge.agents.tools import find_restaurant
 from concierge.config import get_config
+from concierge.guardrails.input_validator import (
+    input_validation_guardrail,
+    party_size_guardrail,
+)
+from concierge.guardrails.output_validator import output_validation_guardrail
 from concierge.services.audio_converter import (
     decode_twilio_audio,
     encode_openai_audio,
@@ -28,16 +41,51 @@ from concierge.services.call_manager import get_call_manager, CallState
 
 logger = logging.getLogger(__name__)
 
+# Global agent instances (initialized on startup)
+orchestrator_agent: Agent | None = None
+
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     """Application lifespan manager."""
+    global orchestrator_agent
+
     config = get_config()
     logger.info(
         f"Starting AI Concierge Voice Server on {config.server_host}:{config.server_port}"
     )
     logger.info(f"Public domain: {config.public_domain or 'NOT CONFIGURED'}")
+
+    # Ensure OpenAI API key is available to the SDK via environment variable
+    if config.openai_api_key and "OPENAI_API_KEY" not in os.environ:
+        os.environ["OPENAI_API_KEY"] = config.openai_api_key
+        logger.info("✓ OpenAI API key loaded into environment")
+
+    # Initialize agents
+    logger.info("Initializing AI agents...")
+
+    # Tier 2: Reservation Agent (handles reservation logic + voice calls)
+    reservation_agent_instance = ReservationAgent(find_restaurant)
+    reservation_agent = reservation_agent_instance.create()
+
+    # Tier 1: Orchestrator (routes requests)
+    orchestrator_instance = OrchestratorAgent(reservation_agent)
+    orchestrator_agent = orchestrator_instance.create()
+
+    # Add guardrails to the orchestrator
+    orchestrator_agent.guardrails = [
+        input_validation_guardrail,
+        party_size_guardrail,
+        output_validation_guardrail,
+    ]
+
+    logger.info("✓ AI agents initialized successfully")
+    logger.info(
+        "  Architecture: Orchestrator → Reservation Agent → Realtime Voice Call"
+    )
+
     yield
+
     logger.info("Shutting down AI Concierge Voice Server")
 
 
@@ -120,6 +168,86 @@ async def diagnostics():
             ],
         },
     }
+
+
+@app.post("/process-request")
+async def process_request(request: Request):
+    """Process a reservation request through the agent pipeline.
+
+    This endpoint accepts user input text, runs it through the orchestrator
+    and reservation agents, and returns the result.
+
+    Request body:
+        {
+            "user_input": "Book a table at Demo Restaurant for 4 people tomorrow at 7pm"
+        }
+
+    Returns:
+        {
+            "success": true,
+            "message": "Reservation confirmed at Demo Restaurant...",
+            "final_output": "...",
+            "formatted_result": "..."
+        }
+    """
+    global orchestrator_agent
+
+    if orchestrator_agent is None:
+        return JSONResponse(
+            status_code=503,
+            content={"error": "Agents not initialized yet"},
+        )
+
+    try:
+        data = await request.json()
+        user_input = data.get("user_input")
+
+        if not user_input:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "Missing user_input field"},
+            )
+
+        logger.info("=" * 70)
+        logger.info(f"📥 Processing request: {user_input}")
+        logger.info("=" * 70)
+
+        # Run the orchestrator using the SDK Runner
+        runner = Runner()
+        result = runner.run_sync(starting_agent=orchestrator_agent, input=user_input)
+
+        # Extract the final output
+        final_output = ""
+        if hasattr(result, "final_output"):
+            final_output = result.final_output
+        else:
+            final_output = str(result)
+
+        # Format the result
+        formatted_result = format_reservation_result(result)
+
+        logger.info("=" * 70)
+        logger.info("✓ Request processed successfully")
+        logger.info(f"Final output: {final_output}")
+        logger.info("=" * 70)
+
+        return {
+            "success": True,
+            "message": "Request processed successfully",
+            "final_output": final_output,
+            "formatted_result": formatted_result,
+        }
+
+    except Exception as e:
+        logger.exception("Error processing request")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": str(e),
+                "message": f"Error processing request: {e}",
+            },
+        )
 
 
 @app.post("/register-call")

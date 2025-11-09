@@ -29,6 +29,10 @@ class Config(BaseSettings):
     # Server Configuration
     server_host: str = Field(default="0.0.0.0", description="Server host")
     server_port: int = Field(default=8080, description="Server port")
+    server_url: str = Field(
+        default="http://localhost:8080",
+        description="Server URL for CLI to connect to API",
+    )
     public_domain: str | None = Field(
         None, description="Public domain for Twilio webhooks (e.g., abc123.ngrok.io)"
     )

@@ -1,62 +1,24 @@
-"""Command-line interface for AI Concierge using OpenAI Agents SDK."""
+"""Command-line interface for AI Concierge - HTTP client for server API."""
 
 import logging
-import os
 import sys
 
-from agents import Runner
-from agents.extensions.visualization import draw_graph
+import httpx
 
-from concierge.agents import (
-    OrchestratorAgent,
-    ReservationAgent,
-    format_reservation_result,
-)
-from concierge.agents.tools import find_restaurant
 from concierge.config import get_config, setup_logging
-from concierge.guardrails.input_validator import (
-    input_validation_guardrail,
-    party_size_guardrail,
-)
-from concierge.guardrails.output_validator import output_validation_guardrail
 
 logger = logging.getLogger(__name__)
 
 
 class ConciergeCLI:
-    """Command-line interface for the AI Concierge system using Agents SDK."""
+    """Command-line interface for the AI Concierge system - HTTP client."""
 
     def __init__(self) -> None:
         """Initialize the CLI."""
         self.config = get_config()
         setup_logging(self.config)
 
-        # Ensure OpenAI API key is available to the SDK via environment variable
-        # The SDK reads directly from os.environ, not from our Config
-        if self.config.openai_api_key and "OPENAI_API_KEY" not in os.environ:
-            os.environ["OPENAI_API_KEY"] = self.config.openai_api_key
-
-        # Create the 2-tier agent architecture:
-        # Orchestrator → Reservation Agent (which triggers realtime voice calls)
-
-        # Tier 2: Reservation Agent (handles reservation logic + voice calls)
-        reservation_agent_instance = ReservationAgent(find_restaurant)
-        reservation_agent = reservation_agent_instance.create()
-
-        # Tier 1: Orchestrator (routes requests)
-        orchestrator_instance = OrchestratorAgent(reservation_agent)
-        self.orchestrator = orchestrator_instance.create()
-
-        # Add guardrails to the orchestrator
-        self.orchestrator.guardrails = [
-            input_validation_guardrail,
-            party_size_guardrail,
-            output_validation_guardrail,
-        ]
-
-        draw_graph(self.orchestrator, filename="agent_graph")
-
-        logger.info("AI Concierge CLI initialized with realtime voice capabilities")
+        logger.info("AI Concierge CLI initialized as HTTP client")
 
         # Display configuration status
         self._display_config_status()
@@ -69,21 +31,26 @@ class ConciergeCLI:
         print("=" * 60)
 
         print("\nConfiguration Status:")
-        print(
-            f"  OpenAI API: {'✓ Configured' if self.config.openai_api_key else '✗ Not configured'}"
-        )
-        print(
-            f"  Twilio:     {'✓ Configured' if self.config.has_twilio_config() else '✗ Not configured (will simulate)'}"
-        )
+        print(f"  Server URL: {self.config.server_url}")
 
-        if not self.config.has_twilio_config():
-            print("\nNote: Twilio is not configured. Calls will be simulated.")
-            print("To enable real calls, set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN,")
-            print("and TWILIO_PHONE_NUMBER in your .env file.")
+        # Check if server is reachable
+        try:
+            import httpx
+
+            response = httpx.get(f"{self.config.server_url}/health", timeout=5.0)
+            if response.status_code == 200:
+                print("  Server:     ✓ Connected")
+            else:
+                print("  Server:     ⚠ Reachable but not healthy")
+        except Exception:
+            print("  Server:     ✗ Not reachable")
+            print(f"\n⚠ WARNING: Cannot connect to server at {self.config.server_url}")
+            print("  Make sure the server is running:")
+            print("    python -m concierge.server")
 
         print("\nAgent Architecture:")
-        print("  Orchestrator → Reservation Agent → Realtime Voice Call")
-        print("  (Uses OpenAI Realtime API for natural phone conversations)")
+        print("  CLI (HTTP) → Server → Orchestrator → Reservation Agent → Voice Call")
+        print("  (All agent logic runs on the server)")
 
         print("\n" + "=" * 60 + "\n")
 
@@ -122,9 +89,7 @@ class ConciergeCLI:
                 print("Please try again or type 'quit' to exit.")
 
     def _process_request(self, user_input: str) -> None:
-        """Process a single request using the orchestrator.
-
-        The orchestrator will route to the appropriate specialized agent.
+        """Process a single request by sending it to the server API.
 
         Args:
             user_input: User's natural language request
@@ -134,23 +99,49 @@ class ConciergeCLI:
         print("-" * 60 + "\n")
 
         try:
-            # Run the orchestrator using the SDK Runner
-            # The orchestrator will route to the appropriate agent
-            runner = Runner()
-            result = runner.run_sync(starting_agent=self.orchestrator, input=user_input)
+            # Send request to server API
+            with httpx.Client(timeout=300.0) as client:
+                response = client.post(
+                    f"{self.config.server_url}/process-request",
+                    json={"user_input": user_input},
+                )
 
-            # Display the result
-            if hasattr(result, "final_output"):
-                print("\n✓ Request processed successfully!")
-                print(f"\nAgent response:\n{result.final_output}")
-            else:
-                print("\n✓ Request processed")
-                print(f"\nResult: {result}")
+                if response.status_code == 200:
+                    result = response.json()
 
-            # Display formatted result if available
-            formatted = format_reservation_result(result)
-            print(f"\n{formatted}")
+                    # Display the result
+                    print("\n✓ Request processed successfully!")
 
+                    if result.get("final_output"):
+                        print(f"\nAgent response:\n{result['final_output']}")
+
+                    if result.get("formatted_result"):
+                        print(f"\n{result['formatted_result']}")
+
+                else:
+                    error_data = (
+                        response.json()
+                        if response.headers.get("content-type", "").startswith(
+                            "application/json"
+                        )
+                        else {}
+                    )
+                    error_msg = error_data.get("error", response.text)
+                    print(
+                        f"\n⚠ Server error (status {response.status_code}): {error_msg}"
+                    )
+
+        except httpx.TimeoutException:
+            logger.exception("Request timed out")
+            print(
+                "\n⚠ Request timed out. The server may be processing a long-running call."
+            )
+            print("Please try again or check the server logs.")
+        except httpx.ConnectError:
+            logger.exception("Cannot connect to server")
+            print(f"\n⚠ Cannot connect to server at {self.config.server_url}")
+            print("Make sure the server is running:")
+            print("  python -m concierge.server")
         except Exception as e:
             logger.error(f"Error processing request: {e}", exc_info=True)
             print(f"\n⚠ Error processing request: {e}")
