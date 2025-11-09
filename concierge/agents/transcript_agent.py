@@ -70,7 +70,12 @@ CONVERSATION TRANSCRIPT:
 
 Extract the ACTUAL CONFIRMED details from this conversation.
 Focus on what the restaurant AGREED TO, not what was originally requested.
-Pay special attention to confirmation numbers mentioned near the end of the conversation."""
+Pay special attention to confirmation numbers mentioned near the end of the conversation.
+
+CRITICAL: If the restaurant says "Passwort", "password", "test", "demo", or any common word,
+this is NOT a valid confirmation number. Return None for confirmation_number in this case.
+Only extract actual confirmation codes (numeric like "0815" or alphanumeric like "ABC123").
+Do NOT interpret or guess - if no valid confirmation number is found, return None."""
 
         logger.info("Analyzing transcript with LLM...")
 

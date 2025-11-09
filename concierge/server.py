@@ -14,7 +14,15 @@ from contextlib import asynccontextmanager, suppress
 
 import uvicorn
 from agents import Agent, Runner
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Response, Query, Request
+from fastapi import (
+    FastAPI,
+    WebSocket,
+    WebSocketDisconnect,
+    Response,
+    Query,
+    Request,
+    Depends,
+)
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -34,15 +42,10 @@ from concierge.services.call_manager import get_call_manager
 
 logger = logging.getLogger(__name__)
 
-# Global agent instances (initialized on startup)
-orchestrator_agent: Agent | None = None
-
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     """Application lifespan manager."""
-    global orchestrator_agent
-
     config = get_config()
     logger.info(
         f"Starting AI Concierge Voice Server on {config.server_host}:{config.server_port}"
@@ -72,6 +75,9 @@ async def lifespan(_app: FastAPI):
         output_validation_guardrail,
     ]
 
+    # Store agent in app state for dependency injection
+    _app.state.orchestrator_agent = orchestrator_agent
+
     logger.info("✓ AI agents initialized successfully")
     logger.info(
         "  Architecture: Orchestrator → Reservation Agent → Realtime Voice Call"
@@ -83,8 +89,8 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(
-    title="AI Concierge Voice Server",
-    description="WebSocket server for Twilio Media Streams and OpenAI Realtime API",
+    title="AI Concierge API",
+    description="API for AI Concierge",
     version="0.1.0",
     lifespan=lifespan,
 )
@@ -98,6 +104,26 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def get_orchestrator_agent(request: Request) -> Agent:
+    """Dependency to get the orchestrator agent from app state.
+
+    Args:
+        request: FastAPI request object
+
+    Returns:
+        The orchestrator agent instance
+
+    Raises:
+        HTTPException: If agent is not initialized
+    """
+    agent = getattr(request.app.state, "orchestrator_agent", None)
+    if agent is None:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=503, detail="Agents not initialized yet")
+    return agent
 
 
 @app.get("/")
@@ -119,7 +145,10 @@ async def health_check():
 
 
 @app.post("/process-request")
-async def process_request(request: Request):
+async def process_request(
+    request: Request,
+    orchestrator_agent: Agent = Depends(get_orchestrator_agent),
+):
     """Process a reservation request through the agent pipeline.
 
     This endpoint accepts user input text, runs it through the orchestrator
@@ -138,14 +167,6 @@ async def process_request(request: Request):
             "formatted_result": "..."
         }
     """
-    global orchestrator_agent
-
-    if orchestrator_agent is None:
-        return JSONResponse(
-            status_code=503,
-            content={"error": "Agents not initialized yet"},
-        )
-
     try:
         data = await request.json()
         user_input = data.get("user_input")
@@ -207,7 +228,7 @@ async def process_request(request: Request):
         )
 
 
-@app.api_route("/twiml", methods=["GET", "POST"])
+@app.post("/twiml")
 async def generate_twiml(call_id: str = Query(..., description="Unique call ID")):
     """Generate TwiML to route Twilio call to Media Stream WebSocket.
 

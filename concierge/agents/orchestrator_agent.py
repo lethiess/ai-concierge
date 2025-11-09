@@ -131,8 +131,33 @@ def format_reservation_result(result) -> str:
                         )
                     except (json.JSONDecodeError, AttributeError) as e:
                         logger.exception(f"  ✗ Error parsing tool result: {e}")
+    elif hasattr(result, "raw_responses"):
+        # Try extracting from raw_responses if messages not available
+        logger.debug("Result has raw_responses, checking for tool calls")
+        for response in result.raw_responses:
+            if hasattr(response, "choices") and response.choices:
+                for choice in response.choices:
+                    if hasattr(choice, "message") and hasattr(
+                        choice.message, "tool_calls"
+                    ):
+                        for tool_call in choice.message.tool_calls:
+                            if hasattr(tool_call, "function") and hasattr(
+                                tool_call.function, "arguments"
+                            ):
+                                try:
+                                    args = json.loads(tool_call.function.arguments)
+                                    if isinstance(args, dict) and "call_id" in args:
+                                        call_id = args["call_id"]
+                                        logger.info(
+                                            f"✓ Extracted call_id from raw_responses: {call_id}"
+                                        )
+                                        break
+                                except (json.JSONDecodeError, AttributeError):
+                                    pass
     else:
-        logger.warning("⚠ Result has no messages attribute - trying alternative method")
+        logger.debug(
+            "Result has no messages or raw_responses attribute - using alternative method"
+        )
 
         # Method 2: Get the most recent completed call from CallManager
         call_manager = get_call_manager()
