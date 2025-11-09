@@ -163,20 +163,3 @@ class ReservationAgent:
             The reservation agent
         """
         return self.create()
-
-
-# Backward compatibility: Factory function that wraps the class
-def create_reservation_agent(restaurant_lookup_tool) -> Agent:
-    """Create the reservation agent that handles the reservation workflow.
-
-    This is a convenience function for backward compatibility.
-    For new code, use ReservationAgent class directly.
-
-    Args:
-        restaurant_lookup_tool: The restaurant lookup function tool
-
-    Returns:
-        Configured reservation agent
-    """
-    reservation = ReservationAgent(restaurant_lookup_tool)
-    return reservation.create()

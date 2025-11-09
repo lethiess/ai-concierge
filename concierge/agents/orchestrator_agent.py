@@ -74,23 +74,6 @@ class OrchestratorAgent:
         return self.create()
 
 
-# Backward compatibility: Factory function that wraps the class
-def create_orchestrator_agent(*specialized_agents: Agent) -> Agent:
-    """Create the orchestrator agent that routes to specialized agents.
-
-    This is a convenience function for backward compatibility.
-    For new code, use OrchestratorAgent class directly.
-
-    Args:
-        *specialized_agents: Variable number of specialized agents to route to
-
-    Returns:
-        Configured orchestrator agent
-    """
-    orchestrator = OrchestratorAgent(*specialized_agents)
-    return orchestrator.create()
-
-
 def format_reservation_result(result) -> str:
     """Format a reservation result for display to the user.
 

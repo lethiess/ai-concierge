@@ -8,9 +8,6 @@ from concierge.agents import (
     OrchestratorAgent,
     ReservationAgent,
     VoiceAgent,
-    create_orchestrator_agent,
-    create_reservation_agent,
-    create_voice_agent,
     find_restaurant,
 )
 from concierge.services.restaurant_service import RestaurantService
@@ -20,8 +17,9 @@ class TestAgentCreation:
     """Tests for agent creation using the SDK."""
 
     def test_create_reservation_agent(self):
-        """Test reservation agent creation using factory function."""
-        reservation_agent = create_reservation_agent(find_restaurant)
+        """Test reservation agent creation using class."""
+        reservation_agent_instance = ReservationAgent(find_restaurant)
+        reservation_agent = reservation_agent_instance.create()
 
         assert isinstance(reservation_agent, Agent)
         assert reservation_agent.name == "Reservation Agent"
@@ -40,9 +38,11 @@ class TestAgentCreation:
         assert reservation_agent_instance.agent == reservation_agent
 
     def test_create_orchestrator_agent(self):
-        """Test orchestrator agent creation with specialized agents using factory function."""
-        reservation_agent = create_reservation_agent(find_restaurant)
-        orchestrator = create_orchestrator_agent(reservation_agent)
+        """Test orchestrator agent creation with specialized agents using class."""
+        reservation_agent_instance = ReservationAgent(find_restaurant)
+        reservation_agent = reservation_agent_instance.create()
+        orchestrator_instance = OrchestratorAgent(reservation_agent)
+        orchestrator = orchestrator_instance.create()
 
         assert isinstance(orchestrator, Agent)
         assert orchestrator.name == "AI Concierge Orchestrator"
@@ -50,7 +50,8 @@ class TestAgentCreation:
 
     def test_orchestrator_agent_class(self):
         """Test orchestrator agent creation using class."""
-        reservation_agent = create_reservation_agent(find_restaurant)
+        reservation_agent_instance = ReservationAgent(find_restaurant)
+        reservation_agent = reservation_agent_instance.create()
         orchestrator_instance = OrchestratorAgent(reservation_agent)
         orchestrator = orchestrator_instance.create()
 
@@ -62,15 +63,17 @@ class TestAgentCreation:
 
     def test_agent_handoff_chain(self):
         """Test the handoff chain: Orchestrator → Reservation Agent."""
-        reservation_agent = create_reservation_agent(find_restaurant)
-        orchestrator = create_orchestrator_agent(reservation_agent)
+        reservation_agent_instance = ReservationAgent(find_restaurant)
+        reservation_agent = reservation_agent_instance.create()
+        orchestrator_instance = OrchestratorAgent(reservation_agent)
+        orchestrator = orchestrator_instance.create()
 
         # Verify the handoff chain
         assert reservation_agent in orchestrator.handoffs
 
     @pytest.mark.skip(reason="RealtimeAgent requires specific SDK setup")
     def test_create_voice_agent(self):
-        """Test voice agent creation with reservation details using factory function."""
+        """Test voice agent creation with reservation details using class."""
         reservation_details = {
             "restaurant_name": "Test Restaurant",
             "restaurant_phone": "+1234567890",
@@ -81,7 +84,8 @@ class TestAgentCreation:
             "special_requests": "Window seat please",
         }
 
-        voice_agent = create_voice_agent(reservation_details)
+        voice_agent_instance = VoiceAgent(reservation_details)
+        voice_agent = voice_agent_instance.create()
 
         assert isinstance(voice_agent, RealtimeAgent)
         assert voice_agent.name == "Restaurant Reservation Voice Agent"
@@ -111,9 +115,11 @@ class TestAgentCreation:
 
     def test_multiple_specialized_agents(self):
         """Test orchestrator with multiple specialized agents."""
-        reservation_agent = create_reservation_agent(find_restaurant)
+        reservation_agent_instance = ReservationAgent(find_restaurant)
+        reservation_agent = reservation_agent_instance.create()
         # In the future, we might have cancellation_agent, query_agent, etc.
-        orchestrator = create_orchestrator_agent(reservation_agent)
+        orchestrator_instance = OrchestratorAgent(reservation_agent)
+        orchestrator = orchestrator_instance.create()
 
         assert len(orchestrator.handoffs) >= 1
 

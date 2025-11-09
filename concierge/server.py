@@ -8,15 +8,12 @@ This server:
 5. Manages call state and transcripts
 """
 
-import asyncio
-import json
 import logging
 import os
 from contextlib import asynccontextmanager, suppress
 
 import uvicorn
 from agents import Agent, Runner
-from agents.realtime import RealtimeRunner
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Response, Query, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -33,11 +30,7 @@ from concierge.guardrails.input_validator import (
     party_size_guardrail,
 )
 from concierge.guardrails.output_validator import output_validation_guardrail
-from concierge.services.audio_converter import (
-    decode_twilio_audio,
-    encode_openai_audio,
-)
-from concierge.services.call_manager import get_call_manager, CallState
+from concierge.services.call_manager import get_call_manager
 
 logger = logging.getLogger(__name__)
 
@@ -214,38 +207,6 @@ async def process_request(request: Request):
         )
 
 
-@app.post("/register-call")
-async def register_call(request: Request):
-    """Register a call with reservation details before initiating it.
-
-    This allows the CLI (separate process) to register call details
-    that the server can later retrieve.
-    """
-    try:
-        data = await request.json()
-        call_id = data.get("call_id")
-        reservation_details = data.get("reservation_details")
-
-        if not call_id or not reservation_details:
-            return JSONResponse(
-                status_code=400,
-                content={"error": "Missing call_id or reservation_details"},
-            )
-        call_manager = get_call_manager()
-        call_state = call_manager.create_call(
-            reservation_details=reservation_details, call_id=call_id
-        )
-
-        logger.info(f"✓ Registered call {call_id} with reservation details")
-        logger.info(f"  Restaurant: {reservation_details.get('restaurant_name')}")
-
-        return {"status": "registered", "call_id": call_state.call_id}
-
-    except Exception as e:
-        logger.exception("Error registering call")
-        return JSONResponse(status_code=500, content={"error": str(e)})
-
-
 @app.api_route("/twiml", methods=["GET", "POST"])
 async def generate_twiml(call_id: str = Query(..., description="Unique call ID")):
     """Generate TwiML to route Twilio call to Media Stream WebSocket.
@@ -321,78 +282,6 @@ async def generate_twiml(call_id: str = Query(..., description="Unique call ID")
     return Response(content=twiml, media_type="text/xml")
 
 
-@app.get("/calls/{call_id}/status")
-async def get_call_status(call_id: str):
-    """Get status of a specific call.
-
-    Args:
-        call_id: Unique identifier for the call
-
-    Returns:
-        Call state information
-    """
-    call_manager = get_call_manager()
-    call_state = call_manager.get_call(call_id)
-
-    if not call_state:
-        return JSONResponse(
-            status_code=404,
-            content={"error": f"Call {call_id} not found"},
-        )
-
-    duration = None
-    if call_state.end_time:
-        duration = (call_state.end_time - call_state.start_time).total_seconds()
-
-    return {
-        "call_id": call_state.call_id,
-        "status": call_state.status,
-        "confirmation_number": call_state.confirmation_number,
-        "start_time": call_state.start_time.isoformat(),
-        "end_time": call_state.end_time.isoformat() if call_state.end_time else None,
-        "duration": duration,
-        "transcript_lines": len(call_state.transcript),
-        "error": call_state.error_message,
-    }
-
-
-@app.get("/calls")
-async def list_calls():
-    """List all active and recent calls."""
-    call_manager = get_call_manager()
-    calls = call_manager.get_all_calls()
-
-    return {
-        "total": len(calls),
-        "calls": [
-            {
-                "call_id": call.call_id,
-                "status": call.status,
-                "confirmation_number": call.confirmation_number,
-                "start_time": call.start_time.isoformat(),
-            }
-            for call in calls
-        ],
-    }
-
-
-@app.get("/metrics")
-async def get_metrics():
-    """Get server metrics for monitoring."""
-    call_manager = get_call_manager()
-    calls = call_manager.get_all_calls()
-
-    status_counts = {}
-    for call in calls:
-        status_counts[call.status] = status_counts.get(call.status, 0) + 1
-
-    return {
-        "total_calls": len(calls),
-        "status_counts": status_counts,
-        "server": "ai-concierge-voice",
-    }
-
-
 @app.api_route("/twilio-status", methods=["GET", "POST"])
 async def twilio_status_callback(request: Request):
     """Handle Twilio status callbacks for debugging.
@@ -428,25 +317,6 @@ async def twilio_status_callback(request: Request):
     return Response(content="OK", media_type="text/plain")
 
 
-@app.websocket("/ws-test")
-async def test_websocket(websocket: WebSocket):
-    """Simple WebSocket endpoint for testing connectivity."""
-    try:
-        logger.info("🔌 Test WebSocket connection attempt")
-        logger.info(f"  Client: {websocket.client}")
-        logger.info(f"  Headers: {dict(websocket.headers)}")
-
-        await websocket.accept()
-        logger.info("✓ Test WebSocket connected successfully")
-
-        await websocket.send_text("Hello from AI Concierge server!")
-        await websocket.close()
-        logger.info("✓ Test WebSocket closed")
-
-    except Exception as e:
-        logger.error(f"❌ Test WebSocket error: {e}", exc_info=True)
-
-
 @app.websocket("/media-stream")
 async def handle_media_stream(websocket: WebSocket):
     """Handle Twilio Media Stream WebSocket connection.
@@ -480,227 +350,6 @@ async def handle_media_stream(websocket: WebSocket):
         logger.exception("Error in media stream handler")
         with suppress(Exception):
             await websocket.close(code=1011, reason="Internal error")
-
-
-async def bridge_audio_streams(
-    twilio_ws: WebSocket,
-    runner: RealtimeRunner,
-    call_state: CallState,
-    call_manager,
-):
-    """Bridge audio between Twilio WebSocket and RealtimeRunner.
-
-    This function:
-    1. Starts a RealtimeSession via runner.run()
-    2. Listens for Twilio Media Stream events (start, media, stop)
-    3. Converts Twilio audio (mulaw 8kHz) to OpenAI format (PCM16 24kHz)
-    4. Sends audio to RealtimeSession
-    5. Receives events from RealtimeSession (audio, transcript)
-    6. Converts OpenAI audio to Twilio format
-    7. Sends audio back to Twilio
-    8. Captures transcript for confirmation number extraction
-
-    Args:
-        twilio_ws: Twilio WebSocket connection
-        runner: RealtimeRunner instance
-        call_state: CallState object
-        call_manager: CallManager instance
-
-    References:
-        - https://openai.github.io/openai-agents-python/ref/realtime/runner/
-        - https://openai.github.io/openai-agents-python/ref/realtime/session/
-    """
-    logger.info(f"Starting audio bridge for call {call_state.call_id}")
-
-    try:
-        # Start RealtimeSession
-        session = await runner.run()
-
-        async with session:
-            logger.info(f"RealtimeSession started for call {call_state.call_id}")
-
-            # Create tasks for bidirectional streaming
-            twilio_task = asyncio.create_task(
-                handle_twilio_to_realtime(twilio_ws, session, call_state, call_manager)
-            )
-            realtime_task = asyncio.create_task(
-                handle_realtime_to_twilio(twilio_ws, session, call_state, call_manager)
-            )
-
-            # Wait for either task to complete (call ends)
-            _done, pending = await asyncio.wait(
-                [twilio_task, realtime_task], return_when=asyncio.FIRST_COMPLETED
-            )
-
-            # Cancel remaining tasks
-            for task in pending:
-                task.cancel()
-                with suppress(asyncio.CancelledError):
-                    await task
-
-            logger.info(f"Audio bridge completed for call {call_state.call_id}")
-
-    except WebSocketDisconnect:
-        logger.info(f"Twilio WebSocket disconnected for call {call_state.call_id}")
-    except Exception:
-        logger.exception(f"Error in audio bridge for call {call_state.call_id}")
-
-
-async def handle_twilio_to_realtime(
-    twilio_ws: WebSocket,
-    session,
-    call_state: CallState,
-    _call_manager,
-):
-    """Handle audio from Twilio → RealtimeSession.
-
-    Args:
-        twilio_ws: Twilio WebSocket connection
-        session: RealtimeSession instance
-        call_state: CallState object
-        _call_manager: CallManager instance (unused, for future use)
-    """
-    try:
-        # Listen for Twilio events
-        async for message in twilio_ws.iter_text():
-            try:
-                data = json.loads(message)
-                event_type = data.get("event")
-
-                if event_type == "start":
-                    stream_sid = data["start"]["streamSid"]
-                    call_state.call_sid = stream_sid
-                    logger.info(f"Twilio media stream started: {stream_sid}")
-                    # Trigger the agent to start speaking by sending initial audio (silence)
-                    # This ensures the agent begins the conversation
-                    logger.info("Stream connected - agent should start speaking")
-
-                elif event_type == "dtmf":
-                    # Handle DTMF (keypress) events - important for trial accounts
-                    digit = data.get("dtmf", {}).get("digit")
-                    logger.info(f"DTMF keypress received: {digit}")
-                    # Don't end the call on keypress - continue with the stream
-
-                elif event_type == "media":
-                    # Audio data from Twilio (base64 encoded mulaw)
-                    payload = data["media"]["payload"]
-
-                    # Convert Twilio audio (mulaw 8kHz) to OpenAI format (PCM16 24kHz)
-                    pcm16_audio = decode_twilio_audio(payload)
-
-                    # Send audio to RealtimeSession
-                    await session.send_audio(pcm16_audio)
-
-                elif event_type == "stop":
-                    logger.info(f"Twilio media stream stopped: {call_state.call_sid}")
-                    break
-
-                elif event_type == "mark":
-                    # Mark events for synchronization
-                    logger.debug(f"Mark event: {data.get('mark', {}).get('name')}")
-
-            except json.JSONDecodeError:
-                logger.warning("Received invalid JSON from Twilio")
-            except Exception:
-                logger.exception("Error processing Twilio event")
-
-    except WebSocketDisconnect:
-        logger.info(f"Twilio disconnected for call {call_state.call_id}")
-    except Exception:
-        logger.exception(
-            f"Error in Twilio→Realtime handler for call {call_state.call_id}"
-        )
-
-
-async def handle_realtime_to_twilio(
-    twilio_ws: WebSocket,
-    session,
-    call_state: CallState,
-    call_manager,
-):
-    """Handle events from RealtimeSession → Twilio.
-
-    This function listens for events from the RealtimeSession (audio output,
-    transcripts) and forwards them appropriately.
-
-    Args:
-        twilio_ws: Twilio WebSocket connection
-        session: RealtimeSession instance
-        call_state: CallState object
-        call_manager: CallManager instance
-    """
-    try:
-        # Listen for events from RealtimeSession
-        async for event in session:
-            try:
-                # Handle audio output events
-                if event.type == "audio":
-                    # Get audio data from OpenAI (PCM16 24kHz)
-                    audio_data = event.audio
-
-                    # Convert to Twilio format (mulaw 8kHz)
-                    twilio_audio = encode_openai_audio(audio_data)
-
-                    # Send to Twilio
-                    await send_audio_to_twilio(
-                        twilio_ws, call_state.call_sid, twilio_audio
-                    )
-
-                # Handle transcript events
-                elif event.type == "transcript":
-                    transcript_text = event.text
-                    logger.info(f"Transcript: {transcript_text}")
-
-                    # Append to call transcript for confirmation extraction
-                    call_manager.append_transcript(call_state.call_id, transcript_text)
-
-                # Handle response completion
-                elif event.type == "response.done":
-                    logger.debug(f"Response completed for call {call_state.call_id}")
-
-                # Handle errors
-                elif event.type == "error":
-                    logger.error(f"RealtimeSession error: {event.error}")
-                    call_manager.set_error(call_state.call_id, str(event.error))
-                    break
-
-            except Exception:
-                logger.exception("Error processing Realtime event")
-
-    except Exception:
-        logger.exception(
-            f"Error in Realtime→Twilio handler for call {call_state.call_id}"
-        )
-
-
-async def send_audio_to_twilio(
-    websocket: WebSocket, stream_sid: str, audio_payload: str
-):
-    """Send audio from OpenAI back to Twilio.
-
-    Args:
-        websocket: Twilio WebSocket connection
-        stream_sid: Twilio stream SID
-        audio_payload: Base64 encoded mulaw audio
-    """
-    if not stream_sid:
-        logger.warning("Cannot send audio - stream not started")
-        return
-
-    message = json.dumps(
-        {
-            "event": "media",
-            "streamSid": stream_sid,
-            "media": {
-                "payload": audio_payload,
-            },
-        }
-    )
-
-    try:
-        await websocket.send_text(message)
-    except Exception:
-        logger.exception("Error sending audio to Twilio")
 
 
 def run_server():

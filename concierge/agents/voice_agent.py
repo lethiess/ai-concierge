@@ -122,30 +122,6 @@ class VoiceAgent:
         return self.create()
 
 
-# Backward compatibility: Factory function that wraps the class
-def create_voice_agent(reservation_details: dict) -> RealtimeAgent:
-    """Create a realtime voice agent for making restaurant reservation calls.
-
-    This is a convenience function for backward compatibility.
-    For new code, use VoiceAgent class directly.
-
-    Args:
-        reservation_details: Dictionary containing reservation information:
-            - restaurant_name: Name of the restaurant
-            - restaurant_phone: Phone number to call
-            - party_size: Number of people
-            - date: Reservation date
-            - time: Reservation time
-            - customer_name: Optional customer name
-            - special_requests: Optional special requests
-
-    Returns:
-        Configured RealtimeAgent for conducting the reservation call
-    """
-    voice_agent = VoiceAgent(reservation_details)
-    return voice_agent.create()
-
-
 async def make_reservation_call_via_twilio(
     reservation_details: dict, restaurant: Restaurant
 ) -> ReservationResult:
