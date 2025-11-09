@@ -108,6 +108,23 @@ class CallManager:
 
             if status in ("completed", "failed"):
                 call_state.end_time = datetime.now()
+
+                # On completion, do a final extraction attempt for confirmation number
+                if status == "completed" and not call_state.confirmation_number:
+                    confirmation = self.extract_confirmation(call_id)
+                    if confirmation:
+                        call_state.confirmation_number = confirmation
+                        logger.info(
+                            f"✓ Call {call_id} extracted confirmation number on completion: {confirmation}"
+                        )
+                    else:
+                        logger.warning(
+                            f"⚠ Call {call_id} completed without confirmation number. Transcript length: {len(call_state.transcript)}"
+                        )
+                        if call_state.transcript:
+                            logger.debug(
+                                f"Full transcript: {' '.join(call_state.transcript)}"
+                            )
         else:
             logger.warning(f"Attempted to update non-existent call {call_id}")
 
@@ -163,6 +180,7 @@ class CallManager:
         - "confirmation number ABC123"
         - "your reservation is ABC123"
         - "reference XYZ456"
+        - Numbers with spaces like "1 2 3 4 5 6"
 
         Args:
             call_id: Call identifier
@@ -195,11 +213,27 @@ class CallManager:
         if match:
             return match.group(1).upper()
 
-        # Pattern 4: Any standalone alphanumeric code (6+ chars)
-        pattern4 = r"\b([A-Z]{2,}[0-9]{4,}|[0-9]{4,}[A-Z]{2,})\b"
+        # Pattern 4: Numbers with spaces like "1 2 3 4 5 6" (at least 4 digits)
+        # Look after keywords like confirmation, reservation, reference
+        pattern4 = r"(?:confirmation|reservation|reference).*?(\d(?:\s+\d){3,})"
         match = re.search(pattern4, full_transcript, re.IGNORECASE)
         if match:
+            # Remove spaces to get the number
+            number = match.group(1).replace(" ", "")
+            if len(number) >= 4:
+                return number.upper()
+
+        # Pattern 5: Any standalone alphanumeric code (6+ chars)
+        pattern5 = r"\b([A-Z]{2,}[0-9]{4,}|[0-9]{4,}[A-Z]{2,})\b"
+        match = re.search(pattern5, full_transcript, re.IGNORECASE)
+        if match:
             return match.group(1).upper()
+
+        # Pattern 6: Just a string of 6+ digits (common for confirmation codes)
+        pattern6 = r"\b([0-9]{6,})\b"
+        match = re.search(pattern6, full_transcript, re.IGNORECASE)
+        if match:
+            return match.group(1)
 
         return None
 

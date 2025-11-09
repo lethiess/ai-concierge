@@ -42,6 +42,7 @@ class TwilioHandler:
         """
         self.twilio_websocket = twilio_websocket
         self.reservation_details: dict = {}  # Will be populated from 'start' event
+        self.call_id: str | None = None  # Will be populated from 'start' event
         self._message_loop_task: asyncio.Task[None] | None = None
         self.session: RealtimeSession | None = None
         self.playback_tracker = RealtimePlaybackTracker()
@@ -149,11 +150,16 @@ class TwilioHandler:
 
     async def _twilio_message_loop(self) -> None:
         """Listen for messages from Twilio WebSocket."""
+        from starlette.websockets import WebSocketDisconnect
+
         try:
             while True:
                 message_text = await self.twilio_websocket.receive_text()
                 message = json.loads(message_text)
                 await self._handle_twilio_message(message)
+        except WebSocketDisconnect:
+            # Normal disconnection when call ends
+            logger.info("Twilio WebSocket disconnected (call ended)")
         except json.JSONDecodeError:
             logger.exception("Failed to parse Twilio message")
         except Exception:
@@ -161,10 +167,25 @@ class TwilioHandler:
 
     async def _handle_realtime_event(self, event: RealtimeSessionEvent) -> None:
         """Handle events from the OpenAI Realtime session."""
+        # Only log important event types
+        if event.type in ("transcript", "history_updated", "audio_end"):
+            logger.debug(f"Realtime event: {event.type}")
+
+        # Try to extract and log any text content from ANY event for debugging
+        if hasattr(event, "text") and event.text:
+            logger.info(f"📝 Event text [{event.type}]: {event.text}")
+            if self.call_id:
+                from concierge.services.call_manager import get_call_manager
+
+                call_manager = get_call_manager()
+                call_manager.append_transcript(
+                    self.call_id, f"[{event.type}] {event.text}"
+                )
+
         if event.type == "audio":
             # Send audio to Twilio
             base64_audio = base64.b64encode(event.audio.data).decode("utf-8")
-            logger.info(f"🔊 Sending {len(event.audio.data)} bytes of audio to Twilio")
+            logger.debug(f"Sending {len(event.audio.data)} bytes of audio to Twilio")
             await self.twilio_websocket.send_text(
                 json.dumps(
                     {
@@ -200,11 +221,85 @@ class TwilioHandler:
                 json.dumps({"event": "clear", "streamSid": self._stream_sid})
             )
         elif event.type == "transcript":
-            logger.info(f"📝 Transcript: {event.text}")
+            # Log both role and text to understand who said what
+            role = getattr(event, "role", "unknown")
+            text = event.text
+            logger.info(f"📝 Transcript [{role}]: {text}")
+
+            # Add transcript to CallManager
+            if self.call_id:
+                from concierge.services.call_manager import get_call_manager
+
+                call_manager = get_call_manager()
+                # Include role in transcript for better context
+                transcript_line = f"[{role}] {text}"
+                call_manager.append_transcript(self.call_id, transcript_line)
+
+        elif event.type == "response.done":
+            # Capture the assistant's full response text (less verbose)
+            if hasattr(event, "response") and hasattr(event.response, "output"):
+                for output_item in event.response.output:
+                    if hasattr(output_item, "content"):
+                        for content in output_item.content:
+                            if hasattr(content, "text") and content.text:
+                                if self.call_id:
+                                    from concierge.services.call_manager import (
+                                        get_call_manager,
+                                    )
+
+                                    call_manager = get_call_manager()
+                                    call_manager.append_transcript(
+                                        self.call_id, f"[assistant] {content.text}"
+                                    )
+
+        elif event.type == "conversation.item.created":
+            # Also capture conversation items as they're created
+            if hasattr(event, "item"):
+                item = event.item
+                if hasattr(item, "role") and hasattr(item, "content"):
+                    role = item.role
+                    for content in item.content:
+                        if hasattr(content, "text") and content.text:
+                            if self.call_id and content.text:
+                                from concierge.services.call_manager import (
+                                    get_call_manager,
+                                )
+
+                                call_manager = get_call_manager()
+                                call_manager.append_transcript(
+                                    self.call_id, f"[{role}] {content.text}"
+                                )
+
+        elif event.type == "history_updated":
+            # Extract transcripts from conversation history
+            logger.info("📚 History updated - extracting transcripts")
+            if hasattr(event, "history"):
+                for item in event.history:
+                    if hasattr(item, "content") and item.content:
+                        role = getattr(item, "role", "unknown")
+                        for content in item.content:
+                            # Extract transcript from different content types
+                            transcript_text = None
+                            if hasattr(content, "transcript") and content.transcript:
+                                transcript_text = content.transcript
+                            elif hasattr(content, "text") and content.text:
+                                transcript_text = content.text
+
+                            if transcript_text and self.call_id:
+                                logger.info(
+                                    f"📝 History transcript [{role}]: {transcript_text}"
+                                )
+                                from concierge.services.call_manager import (
+                                    get_call_manager,
+                                )
+
+                                call_manager = get_call_manager()
+                                call_manager.append_transcript(
+                                    self.call_id, f"[{role}] {transcript_text}"
+                                )
+
         elif event.type == "audio_end":
-            logger.info("Audio stream ended")
-        else:
-            pass  # Other events handled internally
+            logger.debug("Audio stream ended")
 
     async def _handle_twilio_message(self, message: dict[str, Any]) -> None:
         """Handle incoming messages from Twilio Media Stream."""
@@ -218,8 +313,11 @@ class TwilioHandler:
                 self._stream_sid = start_data.get("streamSid")
                 self._call_sid = start_data.get("callSid")
 
-                # Extract custom parameters (reservation details)
+                # Extract custom parameters (reservation details + call_id)
                 custom_params = start_data.get("customParameters", {})
+
+                # Extract call_id
+                self.call_id = custom_params.get("call_id")
 
                 # Parse party_size safely
                 party_size_str = custom_params.get("party_size", "2")
@@ -238,9 +336,16 @@ class TwilioHandler:
                 }
 
                 logger.info(
-                    f"📞 Stream started - StreamSid: {self._stream_sid}, CallSid: {self._call_sid}"
+                    f"📞 Stream started - CallID: {self.call_id}, StreamSid: {self._stream_sid}, CallSid: {self._call_sid}"
                 )
                 logger.info(f"📋 Custom parameters: {custom_params}")
+
+                # Update CallManager status to in_progress
+                if self.call_id:
+                    from concierge.services.call_manager import get_call_manager
+
+                    call_manager = get_call_manager()
+                    call_manager.update_status(self.call_id, "in_progress")
 
                 # Signal that we have reservation details
                 self._start_event_received.set()
@@ -250,6 +355,29 @@ class TwilioHandler:
                 await self._handle_mark_event(message)
             elif event == "stop":
                 logger.info("🛑 Media stream stopped")
+
+                # Mark call as completed in CallManager
+                if self.call_id:
+                    from concierge.services.call_manager import get_call_manager
+
+                    call_manager = get_call_manager()
+                    call_state = call_manager.get_call(self.call_id)
+
+                    # Log summary before marking complete
+                    if call_state:
+                        logger.info("📊 Call Summary:")
+                        logger.info(
+                            f"  - Transcript lines: {len(call_state.transcript)}"
+                        )
+                        logger.info(
+                            f"  - Full transcript: {' | '.join(call_state.transcript)}"
+                        )
+                        logger.info(
+                            f"  - Confirmation number: {call_state.confirmation_number}"
+                        )
+
+                    call_manager.update_status(self.call_id, "completed")
+                    logger.info(f"✓ Updated call {self.call_id} status to completed")
         except Exception:
             logger.exception("Error handling Twilio message")
 

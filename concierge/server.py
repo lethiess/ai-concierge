@@ -212,9 +212,12 @@ async def process_request(request: Request):
         logger.info(f"📥 Processing request: {user_input}")
         logger.info("=" * 70)
 
-        # Run the orchestrator using the SDK Runner
+        # Run the orchestrator using the SDK Runner (async version)
+        # We use await runner.run() instead of run_sync() because we're already
+        # in an async context (FastAPI). run_sync() would try to create a new
+        # event loop which conflicts with the existing one.
         runner = Runner()
-        result = runner.run_sync(starting_agent=orchestrator_agent, input=user_input)
+        result = await runner.run(starting_agent=orchestrator_agent, input=user_input)
 
         # Extract the final output
         final_output = ""
@@ -324,16 +327,18 @@ async def generate_twiml(
 
     # Prepare custom parameters to send to WebSocket handler
     # These will be available in the 'start' event
-    custom_params = {}
+    custom_params = {"call_id": call_id}  # Always include call_id
     if call_state:
         reservation_details = call_state.reservation_details
-        custom_params = {
-            "restaurant_name": reservation_details.get("restaurant_name", ""),
-            "party_size": str(reservation_details.get("party_size", "")),
-            "date": reservation_details.get("date", ""),
-            "time": reservation_details.get("time", ""),
-            "customer_name": reservation_details.get("customer_name", ""),
-        }
+        custom_params.update(
+            {
+                "restaurant_name": reservation_details.get("restaurant_name", ""),
+                "party_size": str(reservation_details.get("party_size", "")),
+                "date": reservation_details.get("date", ""),
+                "time": reservation_details.get("time", ""),
+                "customer_name": reservation_details.get("customer_name", ""),
+            }
+        )
         logger.info(
             f"Passing reservation details via custom parameters: {custom_params}"
         )
@@ -352,6 +357,7 @@ async def generate_twiml(
     <Say>Connecting you to our reservation system.</Say>
     <Connect>
         <Stream url="{websocket_url}" track="inbound_track">
+            <Parameter name="call_id" value="{custom_params.get('call_id', '')}" />
             <Parameter name="restaurant_name" value="{custom_params.get('restaurant_name', '')}" />
             <Parameter name="party_size" value="{custom_params.get('party_size', '')}" />
             <Parameter name="date" value="{custom_params.get('date', '')}" />

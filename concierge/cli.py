@@ -48,10 +48,6 @@ class ConciergeCLI:
             print("  Make sure the server is running:")
             print("    python -m concierge.server")
 
-        print("\nAgent Architecture:")
-        print("  CLI (HTTP) → Server → Orchestrator → Reservation Agent → Voice Call")
-        print("  (All agent logic runs on the server)")
-
         print("\n" + "=" * 60 + "\n")
 
     def run(self) -> None:
