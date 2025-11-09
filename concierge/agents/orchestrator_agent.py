@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from agents import Agent
 
 from concierge.config import get_config
+from concierge.prompts import load_prompt
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -50,32 +51,13 @@ class OrchestratorAgent:
             The agent is created lazily on first call and cached.
         """
         if self._agent is None:
+            # Load instructions from template
+            instructions = load_prompt("orchestrator_agent")
+
             self._agent = Agent(
                 name="AI Concierge Orchestrator",
                 model=self.config.agent_model,
-                instructions="""You are the AI Concierge orchestrator. Your role is to understand user requests
-and route them to the appropriate specialized agent.
-
-Current capabilities:
-- **Reservation Requests**: For booking/making restaurant reservations
-  Examples: "Book a table", "Make a reservation", "Reserve a table"
-  → Hand off to the Reservation Agent
-
-Future capabilities (not yet implemented):
-- Cancellation requests → Hand off to Cancellation Agent
-- Modification requests → Hand off to Modification Agent
-- Query requests → Hand off to Query Agent
-
-**Important Instructions:**
-1. Analyze the user's request to determine their intent
-2. If it's a reservation request, hand off to the Reservation Agent
-3. If the request type is not yet supported, politely inform the user
-4. Be friendly, professional, and concise
-5. Don't try to handle the request yourself - always delegate to specialized agents
-
-When you identify a reservation request, immediately hand off to the Reservation Agent.
-Don't ask for details yourself - let the specialized agent handle that.
-""",
+                instructions=instructions,
                 handoffs=self.specialized_agents,
             )
             logger.info("Orchestrator agent created successfully")

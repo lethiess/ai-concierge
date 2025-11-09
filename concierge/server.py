@@ -122,52 +122,7 @@ async def root():
 @app.get("/health")
 async def health_check():
     """Health check endpoint for monitoring."""
-    return {"status": "healthy", "service": "ai-concierge-voice"}
-
-
-@app.get("/diagnostics")
-async def diagnostics():
-    """Comprehensive diagnostics for debugging Twilio integration."""
-    config = get_config()
-    call_manager = get_call_manager()
-
-    return {
-        "server": {
-            "status": "running",
-            "host": config.server_host,
-            "port": config.server_port,
-            "public_domain": config.public_domain or "NOT CONFIGURED",
-        },
-        "twilio": {
-            "configured": config.has_twilio_config(),
-            "account_sid": config.twilio_account_sid[:8] + "..."
-            if config.twilio_account_sid
-            else None,
-            "phone_number": config.twilio_phone_number,
-        },
-        "endpoints": {
-            "twiml": f"https://{config.public_domain}/twiml?call_id=test"
-            if config.public_domain
-            else "NOT AVAILABLE",
-            "websocket_test": f"wss://{config.public_domain}/ws-test"
-            if config.public_domain
-            else "NOT AVAILABLE",
-            "media_stream": f"wss://{config.public_domain}/media-stream?call_id=test"
-            if config.public_domain
-            else "NOT AVAILABLE",
-        },
-        "calls": {
-            "total": len(call_manager.get_all_calls()),
-            "recent": [
-                {
-                    "call_id": call.call_id,
-                    "status": call.status,
-                    "restaurant": call.reservation_details.get("restaurant_name"),
-                }
-                for call in list(call_manager.get_all_calls())[-5:]
-            ],
-        },
-    }
+    return {"status": "healthy", "service": "ai-concierge-api"}
 
 
 @app.post("/process-request")

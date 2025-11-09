@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from concierge.config import get_config
 from concierge.models import Restaurant
+from concierge.prompts import load_prompt
 from concierge.services.call_manager import get_call_manager
 from concierge.services.twilio_service import TwilioService
 
@@ -78,37 +79,21 @@ class VoiceAgent:
             )
             special_requests = self.reservation_details.get("special_requests", "")
 
-            # Build instructions for the voice agent
-            instructions = f"""You are calling {restaurant_name} to make a restaurant reservation.
+            # Format special requests for prompt
+            special_requests_text = ""
+            if special_requests:
+                special_requests_text = f"**Special requests:** {special_requests}"
 
-**Your Task:**
-Make a reservation for {party_size} people on {date} at {time}.
-Customer name: {customer_name}
-{f"Special requests: {special_requests}" if special_requests else ""}
-
-**Instructions:**
-1. **When you receive "start", immediately begin speaking** - greet the restaurant and introduce yourself
-2. State that you're calling to make a reservation
-3. Provide the date, time, and party size clearly
-4. Give the customer's name when asked
-5. Mention any special requests if applicable
-6. Try to get a confirmation number
-7. If the requested time is unavailable, ask about nearby time slots
-8. Listen carefully to the restaurant's responses and respond naturally
-9. Thank them and end the call politely when the reservation is confirmed or completed
-
-**CRITICAL**: When triggered with "start", immediately begin the conversation by greeting the restaurant.
-Example: "Hello, I'd like to make a reservation for {party_size} people on {date} at {time}."
-
-**Important:**
-- Be natural and conversational
-- Listen carefully to their responses
-- Be flexible if they suggest alternative times
-- If you reach voicemail, leave a brief message with a callback number
-- Keep the call professional and concise
-
-Your goal is to successfully book the reservation or gather information about alternatives.
-"""
+            # Load and format prompt from template
+            instructions = load_prompt(
+                "voice_agent",
+                restaurant_name=restaurant_name,
+                party_size=party_size,
+                date=date,
+                time=time,
+                customer_name=customer_name,
+                special_requests=special_requests_text,
+            )
 
             # Create the RealtimeAgent with minimal configuration
             # Full configuration (voice, temperature, etc.) is done via RealtimeRunner
@@ -212,58 +197,27 @@ async def make_reservation_call_via_twilio(
     start_time = datetime.now()
 
     try:
-        # Step 1: Generate call ID
+        # Step 1: Create call in CallManager (direct call since we're in same process)
         call_id = call_manager.generate_call_id()
-        logger.info(f"Generated call ID: {call_id}")
+        call_manager.create_call(reservation_details, call_id)
+        logger.info(f"✓ Created call {call_id} in CallManager")
 
-        # Step 2: Register call with server (so server's CallManager knows about it)
-        import httpx
-
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    f"https://{config.public_domain}/register-call",
-                    json={
-                        "call_id": call_id,
-                        "reservation_details": reservation_details,
-                    },
-                    timeout=10.0,
-                )
-                response.raise_for_status()
-                logger.info(f"✓ Registered call {call_id} with server")
-        except Exception as e:
-            logger.exception("Failed to register call with server")
-            return ReservationResult(
-                status="error",
-                restaurant_name=restaurant.name,
-                message=f"Failed to register call: {e}",
-                call_duration=0.0,
-            )
-
-        # Step 3: Build TwiML URL
+        # Step 2: Build TwiML URL
         twiml_url = (
             f"https://{config.public_domain}/twiml?call_id={call_id}&test_mode=false"
         )
         status_callback_url = f"https://{config.public_domain}/twilio-status"
         logger.info(f"TwiML URL: {twiml_url}")
 
-        # Step 4: Initiate Twilio call
+        # Step 3: Initiate Twilio call
         call_sid = twilio_service.initiate_call(
             to_number=restaurant.phone_number,
             twiml_url=twiml_url,
             status_callback=status_callback_url,
         )
-        # Update the call with Twilio SID (register with server again to update)
-        try:
-            async with httpx.AsyncClient() as client:
-                # Just set it locally for tracking
-                pass
-        except Exception:
-            pass
-
         logger.info(f"Initiated Twilio call {call_sid} for reservation call {call_id}")
 
-        # Step 5: Wait for call to complete (poll with timeout)
+        # Step 4: Wait for call to complete (poll with timeout)
         result = await wait_for_call_completion(call_id, timeout=180)
 
         duration = (datetime.now() - start_time).total_seconds()

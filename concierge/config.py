@@ -45,6 +45,13 @@ class Config(BaseSettings):
         default="Demo Restaurant", description="Demo restaurant name"
     )
 
+    # Concierge/User Configuration
+    concierge_name: str = Field(
+        default="AI Concierge",
+        description="Name to use for reservations (user's name)",
+    )
+    concierge_phone: str | None = Field(None, description="Phone number for callbacks")
+
     # Logging Configuration
     log_level: str = Field(default="INFO", description="Logging level")
 

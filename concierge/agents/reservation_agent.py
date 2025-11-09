@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from concierge.config import get_config
 from concierge.models import Restaurant
+from concierge.prompts import load_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +62,9 @@ class ReservationAgent:
             The agent is created lazily on first call and cached.
         """
         if self._agent is None:
-            # Create the call initiation tool
+            # Create the call initiation tool with config defaults
+            config = self.config
+
             @function_tool
             async def initiate_reservation_call(
                 restaurant_name: str,
@@ -95,6 +98,11 @@ class ReservationAgent:
 
                 logger.info(f"Initiating realtime voice call to {restaurant_name}")
 
+                # Use concierge name from config if not provided
+                if not customer_name:
+                    customer_name = config.concierge_name
+                    logger.info(f"Using concierge name from config: {customer_name}")
+
                 # Prepare reservation details
                 reservation_details = {
                     "restaurant_name": restaurant_name,
@@ -127,45 +135,13 @@ class ReservationAgent:
                     "call_duration": result.call_duration,
                 }
 
+            # Load instructions from template
+            instructions = load_prompt("reservation_agent")
+
             self._agent = Agent(
                 name="Reservation Agent",
                 model=self.config.agent_model,
-                instructions="""You are a specialized restaurant reservation agent. Your role is to:
-
-CRITICAL: You MUST call tools before completing. Do NOT return structured output until AFTER calling all necessary tools.
-
-1. Parse the user's reservation request and extract:
-   - Restaurant name
-   - Party size (number of people, must be 1-50)
-   - Date of reservation
-   - Time of reservation
-   - Customer name (if provided)
-   - Customer phone (if provided)
-   - Any special requests
-
-2. **REQUIRED**: Use the find_restaurant tool to look up the restaurant details (especially the phone number).
-   You MUST call this tool - do not skip it.
-
-3. Validate the information:
-   - Party size must be between 1 and 50 people
-   - All required fields must be present (restaurant, party size, date, time)
-
-4. **REQUIRED**: Once you have all the information and found the restaurant, you MUST use the initiate_reservation_call
-   tool to make the actual phone call to the restaurant. This is NOT optional - you must make the call.
-
-5. The initiate_reservation_call tool will:
-   - Use OpenAI Realtime API for natural voice conversation
-   - Connect via Twilio to make the actual phone call
-   - Conduct the reservation conversation in real-time
-   - Return the result (confirmed, pending, or rejected)
-
-6. **AFTER** calling initiate_reservation_call and receiving the result, THEN return the reservation details.
-
-Be polite, concise, and ask for missing information if needed.
-If the restaurant is not found, inform the user and ask for clarification.
-
-IMPORTANT: Always call find_restaurant first, then initiate_reservation_call, and ONLY THEN return the final result.
-""",
+                instructions=instructions,
                 tools=[self.restaurant_lookup_tool, initiate_reservation_call],
                 # Note: output_type removed to allow tool calls before completion
                 # The agent will call tools first, then return text describing the result
