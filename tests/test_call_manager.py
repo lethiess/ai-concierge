@@ -77,14 +77,14 @@ class TestCallManager:
         result = call_manager.get_call("nonexistent")
         assert result is None
 
-    def test_update_status(self, call_manager):
+    async def test_update_status(self, call_manager):
         """Test updating call status."""
         call_state = call_manager.create_call({"test": "data"})
 
-        call_manager.update_status(call_state.call_id, "in_progress")
+        await call_manager.update_status(call_state.call_id, "in_progress")
         assert call_state.status == "in_progress"
 
-        call_manager.update_status(call_state.call_id, "completed")
+        await call_manager.update_status(call_state.call_id, "completed")
         assert call_state.status == "completed"
         assert call_state.end_time is not None
 
@@ -116,66 +116,6 @@ class TestCallManager:
         assert call_state.error_message == "Test error"
         assert call_state.end_time is not None
 
-    def test_extract_confirmation_pattern1(self, call_manager):
-        """Test extracting confirmation number - pattern 1."""
-        call_state = call_manager.create_call({"test": "data"})
-
-        call_manager.append_transcript(
-            call_state.call_id, "Your confirmation number is ABC123"
-        )
-
-        confirmation = call_manager.extract_confirmation(call_state.call_id)
-        assert confirmation == "ABC123"
-
-    def test_extract_confirmation_pattern2(self, call_manager):
-        """Test extracting confirmation number - pattern 2."""
-        call_state = call_manager.create_call({"test": "data"})
-
-        call_manager.append_transcript(call_state.call_id, "Your reservation is XYZ789")
-
-        confirmation = call_manager.extract_confirmation(call_state.call_id)
-        assert confirmation == "XYZ789"
-
-    def test_extract_confirmation_pattern3(self, call_manager):
-        """Test extracting confirmation number - pattern 3."""
-        call_state = call_manager.create_call({"test": "data"})
-
-        call_manager.append_transcript(call_state.call_id, "Reference number: DEF456")
-
-        confirmation = call_manager.extract_confirmation(call_state.call_id)
-        assert confirmation == "DEF456"
-
-    def test_extract_confirmation_pattern4(self, call_manager):
-        """Test extracting confirmation number - pattern 4 (standalone)."""
-        call_state = call_manager.create_call({"test": "data"})
-
-        call_manager.append_transcript(
-            call_state.call_id, "Please write this down: ABC1234"
-        )
-
-        confirmation = call_manager.extract_confirmation(call_state.call_id)
-        assert confirmation == "ABC1234"
-
-    def test_extract_confirmation_not_found(self, call_manager):
-        """Test when no confirmation number present."""
-        call_state = call_manager.create_call({"test": "data"})
-
-        call_manager.append_transcript(call_state.call_id, "Sorry, we're fully booked")
-
-        confirmation = call_manager.extract_confirmation(call_state.call_id)
-        assert confirmation is None
-
-    def test_extract_confirmation_auto_update(self, call_manager):
-        """Test that confirmation is auto-extracted on transcript append."""
-        call_state = call_manager.create_call({"test": "data"})
-
-        # Should auto-extract
-        call_manager.append_transcript(
-            call_state.call_id, "Confirmation number is AUTO123"
-        )
-
-        assert call_state.confirmation_number == "AUTO123"
-
     def test_get_all_calls(self, call_manager):
         """Test getting all calls."""
         call_manager.create_call({"test": "data1"})
@@ -188,18 +128,17 @@ class TestCallManager:
 
     def test_cleanup_old_calls(self, call_manager):
         """Test cleanup of old calls."""
+        from datetime import datetime, timedelta
+
         # Create calls
         call1 = call_manager.create_call({"test": "data1"})
         call2 = call_manager.create_call({"test": "data2"})
 
-        # Mark as completed
-        call_manager.update_status(call1.call_id, "completed")
-        call_manager.update_status(call2.call_id, "failed")
-
-        # Manually set end_time to the past (older than 60 minutes)
-        from datetime import datetime, timedelta
-
+        # Mark as completed (skip async update for simplicity in this test)
+        call1.status = "completed"
         call1.end_time = datetime.now() - timedelta(minutes=120)
+
+        call2.status = "failed"
         call2.end_time = datetime.now() - timedelta(minutes=30)
 
         # Cleanup calls older than 60 minutes

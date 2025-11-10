@@ -175,8 +175,8 @@ def search_restaurants_llm(
 
 Search criteria:
 - Query: {query}
-- Cuisine: {cuisine or 'any'}
-- Location: {location or 'not specified'}
+- Cuisine: {cuisine or "any"}
+- Location: {location or "not specified"}
 - Minimum rating: {rating_min}/5.0
 
 Generate restaurants that would match these criteria. Include:

@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 @output_guardrail
 async def output_validation_guardrail(
-    context: RunContextWrapper[None], agent: Agent, output: str
+    _context: RunContextWrapper[None], _agent: Agent, output: str
 ) -> GuardrailFunctionOutput:
     """Validate agent output for sensitive information.
 
@@ -58,7 +58,7 @@ async def output_validation_guardrail(
 
 @output_guardrail
 async def output_sanitization_guardrail(
-    context: RunContextWrapper[None], agent: Agent, output: str
+    _context: RunContextWrapper[None], _agent: Agent, output: str
 ) -> GuardrailFunctionOutput:
     """Sanitize output by masking potential sensitive information.
 

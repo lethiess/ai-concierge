@@ -55,12 +55,25 @@ class TestAgentCreation:
             find_restaurant, initiate_reservation_call
         )
         reservation_agent = reservation_agent_instance.create()
-        orchestrator_instance = OrchestratorAgent(reservation_agent=reservation_agent)
+
+        cancellation_agent_instance = CancellationAgent(
+            lookup_reservation_from_history, initiate_cancellation_call
+        )
+        cancellation_agent = cancellation_agent_instance.create()
+
+        search_agent_instance = SearchAgent(search_restaurants_llm)
+        search_agent = search_agent_instance.create()
+
+        orchestrator_instance = OrchestratorAgent(
+            reservation_agent=reservation_agent,
+            cancellation_agent=cancellation_agent,
+            search_agent=search_agent,
+        )
         orchestrator = orchestrator_instance.create()
 
         assert isinstance(orchestrator, Agent)
         assert orchestrator.name == "AI Concierge Orchestrator"
-        assert len(orchestrator.handoffs) == 1
+        assert len(orchestrator.handoffs) == 3
 
     def test_orchestrator_agent_class(self):
         """Test orchestrator agent creation using class."""
@@ -68,26 +81,54 @@ class TestAgentCreation:
             find_restaurant, initiate_reservation_call
         )
         reservation_agent = reservation_agent_instance.create()
-        orchestrator_instance = OrchestratorAgent(reservation_agent=reservation_agent)
+
+        cancellation_agent_instance = CancellationAgent(
+            lookup_reservation_from_history, initiate_cancellation_call
+        )
+        cancellation_agent = cancellation_agent_instance.create()
+
+        search_agent_instance = SearchAgent(search_restaurants_llm)
+        search_agent = search_agent_instance.create()
+
+        orchestrator_instance = OrchestratorAgent(
+            reservation_agent=reservation_agent,
+            cancellation_agent=cancellation_agent,
+            search_agent=search_agent,
+        )
         orchestrator = orchestrator_instance.create()
 
         assert isinstance(orchestrator, Agent)
         assert orchestrator.name == "AI Concierge Orchestrator"
-        assert len(orchestrator.handoffs) == 1
+        assert len(orchestrator.handoffs) == 3
         # Test property access
         assert orchestrator_instance.agent == orchestrator
 
     def test_agent_handoff_chain(self):
-        """Test the handoff chain: Orchestrator → Reservation Agent."""
+        """Test the handoff chain: Orchestrator → Specialized Agents."""
         reservation_agent_instance = ReservationAgent(
             find_restaurant, initiate_reservation_call
         )
         reservation_agent = reservation_agent_instance.create()
-        orchestrator_instance = OrchestratorAgent(reservation_agent=reservation_agent)
+
+        cancellation_agent_instance = CancellationAgent(
+            lookup_reservation_from_history, initiate_cancellation_call
+        )
+        cancellation_agent = cancellation_agent_instance.create()
+
+        search_agent_instance = SearchAgent(search_restaurants_llm)
+        search_agent = search_agent_instance.create()
+
+        orchestrator_instance = OrchestratorAgent(
+            reservation_agent=reservation_agent,
+            cancellation_agent=cancellation_agent,
+            search_agent=search_agent,
+        )
         orchestrator = orchestrator_instance.create()
 
         # Verify the handoff chain
         assert reservation_agent in orchestrator.handoffs
+        assert cancellation_agent in orchestrator.handoffs
+        assert search_agent in orchestrator.handoffs
 
     def test_create_cancellation_agent(self):
         """Test cancellation agent creation."""
@@ -186,11 +227,23 @@ class TestAgentCreation:
             find_restaurant, initiate_reservation_call
         )
         reservation_agent = reservation_agent_instance.create()
-        # In the future, we might have cancellation_agent, query_agent, etc.
-        orchestrator_instance = OrchestratorAgent(reservation_agent)
+
+        cancellation_agent_instance = CancellationAgent(
+            lookup_reservation_from_history, initiate_cancellation_call
+        )
+        cancellation_agent = cancellation_agent_instance.create()
+
+        search_agent_instance = SearchAgent(search_restaurants_llm)
+        search_agent = search_agent_instance.create()
+
+        orchestrator_instance = OrchestratorAgent(
+            reservation_agent=reservation_agent,
+            cancellation_agent=cancellation_agent,
+            search_agent=search_agent,
+        )
         orchestrator = orchestrator_instance.create()
 
-        assert len(orchestrator.handoffs) >= 1
+        assert len(orchestrator.handoffs) == 3
 
 
 class TestTools:

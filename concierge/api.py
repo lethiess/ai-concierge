@@ -332,14 +332,14 @@ async def generate_twiml(call_id: str = Query(..., description="Unique call ID")
     <Say>Connecting you to our reservation system.</Say>
     <Connect>
         <Stream url="{websocket_url}" track="inbound_track">
-            <Parameter name="call_id" value="{custom_params.get('call_id', '')}" />
-            <Parameter name="restaurant_name" value="{custom_params.get('restaurant_name', '')}" />
-            <Parameter name="party_size" value="{custom_params.get('party_size', '')}" />
-            <Parameter name="date" value="{custom_params.get('date', '')}" />
-            <Parameter name="time" value="{custom_params.get('time', '')}" />
-            <Parameter name="customer_name" value="{custom_params.get('customer_name', '')}" />
-            <Parameter name="confirmation_number" value="{custom_params.get('confirmation_number', '')}" />
-            <Parameter name="call_type" value="{custom_params.get('call_type', 'reservation')}" />
+            <Parameter name="call_id" value="{custom_params.get("call_id", "")}" />
+            <Parameter name="restaurant_name" value="{custom_params.get("restaurant_name", "")}" />
+            <Parameter name="party_size" value="{custom_params.get("party_size", "")}" />
+            <Parameter name="date" value="{custom_params.get("date", "")}" />
+            <Parameter name="time" value="{custom_params.get("time", "")}" />
+            <Parameter name="customer_name" value="{custom_params.get("customer_name", "")}" />
+            <Parameter name="confirmation_number" value="{custom_params.get("confirmation_number", "")}" />
+            <Parameter name="call_type" value="{custom_params.get("call_type", "reservation")}" />
         </Stream>
     </Connect>
 </Response>"""

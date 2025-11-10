@@ -1,12 +1,8 @@
 """Twilio service for voice call integration."""
 
-import base64
-import json
 import logging
 from typing import Any
-from collections.abc import Callable
 
-import websockets
 from twilio.rest import Client
 
 from concierge.config import get_config
@@ -197,105 +193,3 @@ class TwilioService:
         except Exception:
             logger.exception("Failed to end call")
             raise
-
-
-class TwilioRealtimeMediaStream:
-    """Handler for Twilio Media Streams with OpenAI Realtime API.
-
-    This class manages the bidirectional audio streaming between
-    Twilio and OpenAI's Realtime API.
-    """
-
-    def __init__(
-        self,
-        openai_ws_handler: Callable,
-        sample_rate: int = 8000,
-    ) -> None:
-        """Initialize the media stream handler.
-
-        Args:
-            openai_ws_handler: Async handler for OpenAI WebSocket messages
-            sample_rate: Audio sample rate (Twilio uses 8000 Hz mulaw)
-        """
-        self.openai_ws_handler = openai_ws_handler
-        self.sample_rate = sample_rate
-        self.stream_sid: str | None = None
-        logger.info("Twilio Realtime Media Stream handler initialized")
-
-    async def handle_twilio_stream(self, websocket: Any) -> None:
-        """Handle incoming Twilio Media Stream WebSocket.
-
-        Args:
-            websocket: The Twilio Media Stream WebSocket connection
-        """
-        logger.info("Handling Twilio Media Stream connection")
-
-        try:
-            async for message in websocket:
-                data = json.loads(message)
-                event_type = data.get("event")
-
-                if event_type == "start":
-                    self.stream_sid = data["start"]["streamSid"]
-                    logger.info(f"Media stream started: {self.stream_sid}")
-
-                elif event_type == "media":
-                    # Audio data from Twilio (base64 encoded mulaw)
-                    payload = data["media"]["payload"]
-                    # Decode and send to OpenAI handler
-                    await self._process_audio_from_twilio(payload)
-
-                elif event_type == "stop":
-                    logger.info(f"Media stream stopped: {self.stream_sid}")
-                    break
-
-        except websockets.exceptions.ConnectionClosed:
-            logger.info("Twilio Media Stream connection closed")
-
-        except Exception:
-            logger.exception("Error in Twilio Media Stream")
-
-    async def _process_audio_from_twilio(self, payload: str) -> None:
-        """Process audio received from Twilio.
-
-        Args:
-            payload: Base64 encoded mulaw audio from Twilio
-        """
-        # Decode the audio
-        audio_bytes = base64.b64decode(payload)
-
-        # Send to OpenAI handler
-        # This would be implemented based on the specific OpenAI Realtime API pattern
-        await self.openai_ws_handler(
-            {
-                "type": "input_audio_buffer.append",
-                "audio": base64.b64encode(audio_bytes).decode("utf-8"),
-            }
-        )
-
-    async def send_audio_to_twilio(self, websocket: Any, audio_data: bytes) -> None:
-        """Send audio from OpenAI back to Twilio.
-
-        Args:
-            websocket: The Twilio WebSocket connection
-            audio_data: Raw audio bytes to send
-        """
-        if not self.stream_sid:
-            logger.warning("Cannot send audio - stream not started")
-            return
-
-        # Encode audio to base64
-        payload = base64.b64encode(audio_data).decode("utf-8")
-
-        # Send as Twilio media event
-        message = json.dumps(
-            {
-                "event": "media",
-                "streamSid": self.stream_sid,
-                "media": {
-                    "payload": payload,
-                },
-            }
-        )
-
-        await websocket.send(message)

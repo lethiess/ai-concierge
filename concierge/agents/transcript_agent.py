@@ -60,10 +60,10 @@ class TranscriptAnalysisAgent:
         analysis_prompt = f"""Analyze this restaurant reservation call transcript.
 
 ORIGINALLY REQUESTED:
-- Time: {original_details.get('time')}
-- Date: {original_details.get('date')}
-- Party size: {original_details.get('party_size')}
-- Name: {original_details.get('customer_name', 'Not specified')}
+- Time: {original_details.get("time")}
+- Date: {original_details.get("date")}
+- Party size: {original_details.get("party_size")}
+- Name: {original_details.get("customer_name", "Not specified")}
 
 CONVERSATION TRANSCRIPT:
 {formatted_transcript}

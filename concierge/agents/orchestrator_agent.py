@@ -1,5 +1,6 @@
 """Orchestrator agent that routes requests to specialized agents using OpenAI Agents SDK."""
 
+import json
 import logging
 from typing import TYPE_CHECKING
 
@@ -7,6 +8,7 @@ from agents import Agent
 
 from concierge.config import get_config
 from concierge.prompts import load_prompt
+from concierge.services.call_manager import get_call_manager
 
 if TYPE_CHECKING:
     pass
@@ -107,9 +109,6 @@ def format_reservation_result(result) -> str:
     Returns:
         Formatted string for display
     """
-    import json
-    from concierge.services.call_manager import get_call_manager
-
     output = []
 
     output.append("=" * 60)
@@ -117,10 +116,6 @@ def format_reservation_result(result) -> str:
     output.append("=" * 60)
 
     # Extract structured call information from tool calls
-    from logging import getLogger
-
-    getLogger(__name__)
-
     call_result = None
     call_id = None
 
@@ -128,19 +123,23 @@ def format_reservation_result(result) -> str:
     if hasattr(result, "messages"):
         for msg in result.messages:
             # Check for tool results
-            if hasattr(msg, "role") and msg.role == "tool":
-                if hasattr(msg, "content") and msg.content:
-                    try:
-                        call_result = (
-                            json.loads(msg.content)
-                            if isinstance(msg.content, str)
-                            else msg.content
-                        )
-                        if isinstance(call_result, dict) and "call_id" in call_result:
-                            call_id = call_result["call_id"]
-                            break
-                    except (json.JSONDecodeError, AttributeError):
-                        pass
+            if (
+                hasattr(msg, "role")
+                and msg.role == "tool"
+                and hasattr(msg, "content")
+                and msg.content
+            ):
+                try:
+                    call_result = (
+                        json.loads(msg.content)
+                        if isinstance(msg.content, str)
+                        else msg.content
+                    )
+                    if isinstance(call_result, dict) and "call_id" in call_result:
+                        call_id = call_result["call_id"]
+                        break
+                except (json.JSONDecodeError, AttributeError):
+                    pass
     elif hasattr(result, "raw_responses"):
         # Try extracting from raw_responses if messages not available
         for response in result.raw_responses:
@@ -230,7 +229,7 @@ def format_reservation_result(result) -> str:
                     if display_hour == 0:
                         display_hour = 12
                     time_display = f"{display_hour}:{minute:02d} {period}"
-            except:
+            except (ValueError, AttributeError):
                 pass
 
         date_display = confirmed_date if confirmed_date else "tomorrow"

@@ -118,14 +118,37 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
     "PLR2004",  # magic value
     "S101",     # assert
     "TID252",   # relative imports
+    "PLC0415",  # imports inside functions for test isolation
 ]
 
 # Allow print statements in scripts and CLI
 "scripts/**/*.py" = [
     "T20",  # flake8-print
+    "PLC0415",  # imports inside functions for optional dependencies
 ]
 "concierge/cli.py" = [
     "T201",  # print statements allowed in CLI
+]
+
+# Files with intentional late imports to avoid circular dependencies
+"concierge/agents/tools.py" = [
+    "PLC0415",  # imports inside functions to avoid circular imports
+    "TRY300",   # stylistic choice for readability
+]
+"concierge/agents/cancellation_voice_agent.py" = [
+    "PLC0415",  # imports inside functions to avoid circular imports
+    "TRY300",   # stylistic choice for readability
+]
+"concierge/twilio_handler.py" = [
+    "PLC0415",  # imports inside functions to avoid circular imports
+    "SIM102",   # nested ifs more readable in context
+]
+"concierge/api.py" = [
+    "PLC0415",  # imports inside functions to avoid circular imports
+    "TRY300",   # stylistic choice for readability
+]
+"concierge/services/call_manager.py" = [
+    "PLC0415",  # imports inside functions to avoid circular imports
 ]
 
 [tool.ruff.lint.isort]

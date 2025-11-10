@@ -16,8 +16,8 @@ logger = logging.getLogger(__name__)
 
 @input_guardrail
 async def input_validation_guardrail(
-    context: RunContextWrapper[None],
-    agent: Agent,
+    _context: RunContextWrapper[None],
+    _agent: Agent,
     input: str | list[TResponseInputItem],
 ) -> GuardrailFunctionOutput:
     """Validate user input for security and abuse prevention.
@@ -98,8 +98,8 @@ async def input_validation_guardrail(
 
 @input_guardrail
 async def party_size_guardrail(
-    context: RunContextWrapper[None],
-    agent: Agent,
+    _context: RunContextWrapper[None],
+    _agent: Agent,
     input: str | list[TResponseInputItem],
 ) -> GuardrailFunctionOutput:
     """Validate party size constraints for reservation requests only.
