@@ -2,6 +2,7 @@
 
 import logging
 import sys
+import uuid
 
 import httpx
 
@@ -17,6 +18,10 @@ class ConciergeCLI:
         """Initialize the CLI."""
         self.config = get_config()
         setup_logging(self.config)
+
+        # Generate session_id for this CLI conversation (enables conversation memory)
+        self.session_id = f"cli-{uuid.uuid4().hex[:12]}"
+        logger.info(f"CLI session_id: {self.session_id}")
 
         logger.info("AI Concierge CLI initialized as HTTP client")
 
@@ -40,9 +45,9 @@ class ConciergeCLI:
         print("Examples:")
         print('  "Book a table at Luigi\'s Pizza for 4 people tomorrow at 7pm"')
         print('  "Reserve 2 seats at New York Bar at Friday at 10:00 PM"')
-        print(
-            '  "Table for 6 at The Steakhouse next Tuesday at 8pm under John Smith"\n'
-        )
+        print('  "Table for 6 at The Steakhouse next Tuesday at 8pm under John Smith"')
+        print('  "Cancel my reservation" (remembers from conversation!)\n')
+        print(f"Session ID: {self.session_id}")
         print("Type 'quit' or 'exit' to end the session.\n")
 
         while True:
@@ -79,11 +84,11 @@ class ConciergeCLI:
         print("-" * 60 + "\n")
 
         try:
-            # Send request to server API
+            # Send request to server API with session_id for conversation memory
             with httpx.Client(timeout=300.0) as client:
                 response = client.post(
                     f"{self.config.server_url}/process-request",
-                    json={"user_input": user_input},
+                    json={"user_input": user_input, "session_id": self.session_id},
                 )
 
                 if response.status_code == 200:
@@ -92,11 +97,17 @@ class ConciergeCLI:
                     # Display the result
                     print("\n✓ Request processed successfully!")
 
-                    if result.get("final_output"):
-                        print(f"\nAgent response:\n{result['final_output']}")
+                    # Show agent response
+                    final_output = result.get("final_output", "")
+                    formatted_result = result.get("formatted_result", "")
 
-                    if result.get("formatted_result"):
-                        print(f"\n{result['formatted_result']}")
+                    if final_output:
+                        print(f"\nAgent response:\n{final_output}")
+
+                    # Only show formatted result if it's different from final_output
+                    # (i.e., if we have structured reservation data)
+                    if formatted_result and formatted_result != final_output:
+                        print(f"\n{formatted_result}")
 
                 else:
                     error_data = (

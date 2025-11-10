@@ -9,6 +9,8 @@ class VoiceCallResult(BaseModel):
     status: str  # "confirmed", "pending", "rejected", "error"
     restaurant_name: str
     confirmation_number: str | None = None
+    confirmed_time: str | None = None  # Actual confirmed time from transcript analysis
+    confirmed_date: str | None = None  # Actual confirmed date if changed
     message: str
     call_duration: float | None = None
     call_id: str | None = None

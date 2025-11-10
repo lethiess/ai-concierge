@@ -96,7 +96,12 @@ class VoiceAgent:
                 instructions=instructions,
             )
 
-            logger.info("Realtime voice agent created for calling %s", restaurant_name)
+            logger.info(
+                "✅✅✅ Realtime VoiceAgent (RESERVATION) created for calling %s",
+                restaurant_name,
+            )
+            logger.info("✅✅✅ Agent name: 'Restaurant Reservation Voice Agent'")
+            logger.info("✅✅✅ Agent instructions loaded from: voice_agent.md")
 
         return self._agent
 
@@ -170,9 +175,15 @@ async def make_reservation_call_via_twilio(
 
     try:
         # Step 1: Create call in CallManager (direct call since we're in same process)
+        # Ensure call_type is set (default to "reservation" if not already set)
+        if "call_type" not in reservation_details:
+            reservation_details["call_type"] = "reservation"
+
         call_id = call_manager.generate_call_id()
         call_manager.create_call(reservation_details, call_id)
-        logger.info(f"✓ Created call {call_id} in CallManager")
+        logger.info(
+            f"✓ Created call {call_id} in CallManager (call_type: {reservation_details.get('call_type')})"
+        )
 
         # Step 2: Build TwiML URL
         twiml_url = f"https://{config.public_domain}/twiml?call_id={call_id}"
@@ -284,12 +295,18 @@ async def wait_for_call_completion(
                 status = "pending"
                 message = "Call completed but no confirmation number received. Please check with restaurant."
 
+            # Extract confirmed time and date from transcript analysis
+            confirmed_time = call_state.reservation_details.get("confirmed_time")
+            confirmed_date = call_state.reservation_details.get("confirmed_date")
+
             return VoiceCallResult(
                 status=status,
                 restaurant_name=call_state.reservation_details.get(
                     "restaurant_name", "Unknown"
                 ),
                 confirmation_number=call_state.confirmation_number,
+                confirmed_time=confirmed_time,
+                confirmed_date=confirmed_date,
                 message=message,
                 call_id=call_id,
             )

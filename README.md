@@ -14,10 +14,12 @@ AI Concierge is an MVP demonstration of a multi-agent system that:
 
 ## Features
 
-- **Multi-Agent Architecture**: Modular design with specialized agents for different tasks
+- **Multi-Agent Architecture**: 3 specialized agents (Reservation, Cancellation, Search)
+- **Session Memory**: SQLiteSession remembers conversation across turns
 - **Natural Language Processing**: Parse reservation requests from conversational input
 - **Voice Integration**: Real phone calls using Twilio and OpenAI Realtime API
-- **Guardrails**: Input and output validation for security and compliance
+- **LLM-Powered Search**: Generate restaurant recommendations dynamically
+- **Guardrails**: Rate limiting, input/output validation for security
 - **Flexible Configuration**: Works with or without Twilio (simulates calls if not configured)
 
 ## Architecture
@@ -60,9 +62,11 @@ The system uses a **3-tier agent architecture** with a separate WebSocket server
 ### Components
 
 #### Agents (OpenAI Agents SDK)
-- **Orchestrator Agent**: Routes requests to specialized agents based on intent
+- **Orchestrator Agent**: Routes requests to 3 specialized agents based on intent
 - **Reservation Agent**: Parses reservation details and manages the booking workflow
-- **Voice Agent (RealtimeAgent)**: Conducts natural voice conversations in real-time
+- **Cancellation Agent**: Looks up reservations in session history and cancels them (NEW!)
+- **Search Agent**: Uses LLM to generate restaurant recommendations (NEW!)
+- **Voice Agents (RealtimeAgent)**: Conducts natural voice conversations in real-time
 
 #### Services
 - **FastAPI Server**: WebSocket server for Twilio Media Streams integration
@@ -72,8 +76,9 @@ The system uses a **3-tier agent architecture** with a separate WebSocket server
 - **Twilio Service**: Initiates calls and manages Twilio integration
 
 #### Infrastructure
-- **Guardrails**: Input and output validation using SDK guardrails
-- **CLI**: Terminal-based user interface
+- **Session Memory**: SQLiteSession for automatic conversation history (NEW!)
+- **Guardrails**: Rate limiting (5/hour, 20/day), input/output validation using SDK guardrails
+- **CLI**: Terminal-based user interface with session support
 - **WebSocket Bridge**: Bidirectional audio streaming between Twilio and OpenAI
 
 ## Setup
@@ -183,6 +188,41 @@ See [docs/deployment.md](docs/deployment.md) for detailed setup instructions.
 
 ### Example Interactions
 
+#### Making a Reservation
+```
+Your request: Book a table at Luigi's for 4 people tomorrow at 7pm
+→ Orchestrator routes to Reservation Agent
+→ Voice call made to restaurant
+→ Confirmation #ABC123 received
+```
+
+#### Searching for Restaurants (NEW!)
+```
+Your request: Find the best Italian restaurant in Konstanz
+→ Orchestrator routes to Search Agent
+→ LLM generates 3-5 realistic options with ratings
+→ User can then book one of them
+```
+
+#### Cancelling with Session Memory (NEW!)
+```
+Your request: Cancel my reservation
+→ Orchestrator routes to Cancellation Agent
+→ Agent searches session history for recent bookings
+→ Finds confirmation #ABC123 automatically
+→ Voice call made to cancel reservation
+→ Success!
+```
+
+#### Multi-Turn Conversation (NEW!)
+```
+Turn 1: Find me highly rated Chinese restaurants
+Turn 2: Book Dragon Palace for 3 people Friday at 7pm
+Turn 3: Actually, cancel that
+→ All works seamlessly thanks to session memory!
+```
+
+#### Classic Format
 ```
 Your request: Book a table at Demo Restaurant for 4 people tomorrow at 7pm
 

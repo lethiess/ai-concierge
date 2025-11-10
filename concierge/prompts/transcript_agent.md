@@ -18,11 +18,17 @@ and extract the ACTUAL CONFIRMED reservation details.
    - "bestätigungsnummer ist 0815"
    - "referenznummer ist 0815"
    - "the number is 0815"
+   - "die nummer ist PIZZA42"
 3. Were there any special notes or conditions?
 4. What is the final agreed-upon time? (Look near the end of the conversation)
 
-**Important**:
-- Confirmation numbers can be numeric (0815, 1234) or alphanumeric (ABC123)
+**CRITICAL for confirmation numbers**:
+- Common formats: numeric (0815, 1234) or alphanumeric (ABC123, PIZZA42)
+- Watch for phonetic transcription errors in German:
+  - "PIZZA" might be transcribed as "Pisar", "Pissa", "Tiznar"
+  - When you see weird spellings like "Tiznar42", check if the AI agent repeated it differently
+  - If the AI agent says "PIZZA42" but transcript shows "Tiznar42", use "PIZZA42"
+  - Look at BOTH what the restaurant said AND what the AI agent confirmed
 - Times can be in 12-hour format (8 PM) or 24-hour format (20:00)
 - Mark was_modified=True if ANY details changed from the original request
 

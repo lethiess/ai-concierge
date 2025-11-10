@@ -69,12 +69,16 @@ CONVERSATION TRANSCRIPT:
 {formatted_transcript}
 
 Extract the ACTUAL CONFIRMED details from this conversation.
-Focus on what the restaurant AGREED TO, not what was originally requested.
-Pay special attention to confirmation numbers mentioned near the end of the conversation.
 
-CRITICAL: If the restaurant says "Passwort", "password", "test", "demo", or any common word,
-this is NOT a valid confirmation number. Return None for confirmation_number in this case.
-Only extract actual confirmation codes (numeric like "0815" or alphanumeric like "ABC123").
+CRITICAL RULES:
+1. **Only set confirmed_time if the restaurant offered a DIFFERENT time than originally requested**
+2. **Only set confirmed_date if the restaurant offered a DIFFERENT date than originally requested**
+3. If the restaurant just confirmed what was requested (same time/date), leave confirmed_time and confirmed_date as None
+4. If the restaurant says "Passwort", "password", "test", "demo", or any common word, this is NOT a valid confirmation number
+5. Only extract actual confirmation codes (numeric like "0815" or alphanumeric like "ABC123")
+6. Mark was_modified=True ONLY if details actually changed from the original request
+
+Pay special attention to confirmation numbers mentioned near the end of the conversation.
 Do NOT interpret or guess - if no valid confirmation number is found, return None."""
 
         logger.info("Analyzing transcript with LLM...")

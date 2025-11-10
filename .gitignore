@@ -53,3 +53,8 @@ Thumbs.db
 
 # Ruff
 .ruff_cache/
+
+# Database
+*.db
+*.db-shm
+*.db-wal

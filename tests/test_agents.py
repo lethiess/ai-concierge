@@ -5,10 +5,17 @@ from agents import Agent
 from agents.realtime import RealtimeAgent
 
 from concierge.agents import (
+    CancellationAgent,
     OrchestratorAgent,
     ReservationAgent,
+    SearchAgent,
     VoiceAgent,
     find_restaurant,
+)
+from concierge.agents.tools import (
+    search_restaurants_llm,
+    lookup_reservation_from_history,
+    initiate_cancellation_call,
 )
 from concierge.services.restaurant_service import RestaurantService
 
@@ -41,7 +48,7 @@ class TestAgentCreation:
         """Test orchestrator agent creation with specialized agents using class."""
         reservation_agent_instance = ReservationAgent(find_restaurant)
         reservation_agent = reservation_agent_instance.create()
-        orchestrator_instance = OrchestratorAgent(reservation_agent)
+        orchestrator_instance = OrchestratorAgent(reservation_agent=reservation_agent)
         orchestrator = orchestrator_instance.create()
 
         assert isinstance(orchestrator, Agent)
@@ -52,7 +59,7 @@ class TestAgentCreation:
         """Test orchestrator agent creation using class."""
         reservation_agent_instance = ReservationAgent(find_restaurant)
         reservation_agent = reservation_agent_instance.create()
-        orchestrator_instance = OrchestratorAgent(reservation_agent)
+        orchestrator_instance = OrchestratorAgent(reservation_agent=reservation_agent)
         orchestrator = orchestrator_instance.create()
 
         assert isinstance(orchestrator, Agent)
@@ -65,11 +72,58 @@ class TestAgentCreation:
         """Test the handoff chain: Orchestrator → Reservation Agent."""
         reservation_agent_instance = ReservationAgent(find_restaurant)
         reservation_agent = reservation_agent_instance.create()
-        orchestrator_instance = OrchestratorAgent(reservation_agent)
+        orchestrator_instance = OrchestratorAgent(reservation_agent=reservation_agent)
         orchestrator = orchestrator_instance.create()
 
         # Verify the handoff chain
         assert reservation_agent in orchestrator.handoffs
+
+    def test_create_cancellation_agent(self):
+        """Test cancellation agent creation."""
+        cancellation_agent_instance = CancellationAgent(
+            lookup_reservation_from_history, initiate_cancellation_call
+        )
+        cancellation_agent = cancellation_agent_instance.create()
+
+        assert isinstance(cancellation_agent, Agent)
+        assert cancellation_agent.name == "Cancellation Agent"
+        assert len(cancellation_agent.tools) == 2
+
+    def test_create_search_agent(self):
+        """Test search agent creation."""
+        search_agent_instance = SearchAgent(search_restaurants_llm)
+        search_agent = search_agent_instance.create()
+
+        assert isinstance(search_agent, Agent)
+        assert search_agent.name == "Restaurant Search Agent"
+        assert len(search_agent.tools) == 1
+
+    def test_orchestrator_with_all_agents(self):
+        """Test orchestrator with all 3 specialized agents."""
+        reservation_agent_instance = ReservationAgent(find_restaurant)
+        reservation_agent = reservation_agent_instance.create()
+
+        cancellation_agent_instance = CancellationAgent(
+            lookup_reservation_from_history, initiate_cancellation_call
+        )
+        cancellation_agent = cancellation_agent_instance.create()
+
+        search_agent_instance = SearchAgent(search_restaurants_llm)
+        search_agent = search_agent_instance.create()
+
+        orchestrator_instance = OrchestratorAgent(
+            reservation_agent=reservation_agent,
+            cancellation_agent=cancellation_agent,
+            search_agent=search_agent,
+        )
+        orchestrator = orchestrator_instance.create()
+
+        assert isinstance(orchestrator, Agent)
+        assert orchestrator.name == "AI Concierge Orchestrator"
+        assert len(orchestrator.handoffs) == 3
+        assert reservation_agent in orchestrator.handoffs
+        assert cancellation_agent in orchestrator.handoffs
+        assert search_agent in orchestrator.handoffs
 
     @pytest.mark.skip(reason="RealtimeAgent requires specific SDK setup")
     def test_create_voice_agent(self):

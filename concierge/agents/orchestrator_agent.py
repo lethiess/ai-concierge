@@ -9,7 +9,7 @@ from concierge.config import get_config
 from concierge.prompts import load_prompt
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    pass
 
 logger = logging.getLogger(__name__)
 
@@ -26,13 +26,28 @@ class OrchestratorAgent:
         _agent: The underlying Agent instance (created lazily)
     """
 
-    def __init__(self, *specialized_agents: Agent) -> None:
+    def __init__(
+        self,
+        reservation_agent: Agent,
+        cancellation_agent: Agent | None = None,
+        search_agent: Agent | None = None,
+    ) -> None:
         """Initialize the orchestrator agent.
 
         Args:
-            *specialized_agents: Variable number of specialized agents to route to
+            reservation_agent: Agent for handling reservation requests (required)
+            cancellation_agent: Agent for handling cancellations (optional)
+            search_agent: Agent for restaurant search (optional)
         """
-        self.specialized_agents: Sequence[Agent] = list(specialized_agents)
+        # Build list of specialized agents
+        self.specialized_agents: list[Agent] = [reservation_agent]
+
+        if cancellation_agent:
+            self.specialized_agents.append(cancellation_agent)
+
+        if search_agent:
+            self.specialized_agents.append(search_agent)
+
         self.config = get_config()
         self._agent: Agent | None = None
 
@@ -95,45 +110,30 @@ def format_reservation_result(result) -> str:
     # Extract structured call information from tool calls
     from logging import getLogger
 
-    logger = getLogger(__name__)
+    getLogger(__name__)
 
     call_result = None
     call_id = None
 
     # Try method 1: Extract from result.messages (if available)
     if hasattr(result, "messages"):
-        logger.info(f"📋 Checking {len(result.messages)} messages for tool results")
-        for i, msg in enumerate(result.messages):
-            logger.info(
-                f"  Message {i}: role={getattr(msg, 'role', 'unknown')}, type={type(msg).__name__}"
-            )
+        for msg in result.messages:
             # Check for tool results
             if hasattr(msg, "role") and msg.role == "tool":
                 if hasattr(msg, "content") and msg.content:
-                    logger.info(f"  ✓ Found tool result: {msg.content[:200]}")
                     try:
                         call_result = (
                             json.loads(msg.content)
                             if isinstance(msg.content, str)
                             else msg.content
                         )
-                        logger.info(
-                            f"  Parsed tool result keys: {call_result.keys() if isinstance(call_result, dict) else 'not a dict'}"
-                        )
                         if isinstance(call_result, dict) and "call_id" in call_result:
                             call_id = call_result["call_id"]
-                            logger.info(
-                                f"✓ Extracted call_id from tool result: {call_id}"
-                            )
                             break
-                        logger.warning(
-                            f"⚠ Tool result is dict but no call_id: {call_result}"
-                        )
-                    except (json.JSONDecodeError, AttributeError) as e:
-                        logger.exception(f"  ✗ Error parsing tool result: {e}")
+                    except (json.JSONDecodeError, AttributeError):
+                        pass
     elif hasattr(result, "raw_responses"):
         # Try extracting from raw_responses if messages not available
-        logger.debug("Result has raw_responses, checking for tool calls")
         for response in result.raw_responses:
             if hasattr(response, "choices") and response.choices:
                 for choice in response.choices:
@@ -148,17 +148,10 @@ def format_reservation_result(result) -> str:
                                     args = json.loads(tool_call.function.arguments)
                                     if isinstance(args, dict) and "call_id" in args:
                                         call_id = args["call_id"]
-                                        logger.info(
-                                            f"✓ Extracted call_id from raw_responses: {call_id}"
-                                        )
                                         break
                                 except (json.JSONDecodeError, AttributeError):
                                     pass
     else:
-        logger.debug(
-            "Result has no messages or raw_responses attribute - using alternative method"
-        )
-
         # Method 2: Get the most recent completed call from CallManager
         call_manager = get_call_manager()
         all_calls = call_manager.get_all_calls()
@@ -172,7 +165,6 @@ def format_reservation_result(result) -> str:
             )
             most_recent_call = completed_calls[0]
             call_id = most_recent_call.call_id
-            logger.info(f"✓ Using most recent completed call: {call_id}")
 
     # If we have a call_id, get the actual call state from CallManager
     restaurant_name = None
@@ -180,8 +172,9 @@ def format_reservation_result(result) -> str:
     confirmed_date = None
     confirmed_time = None
     confirmation_number = None
+    customer_name = None
+    special_requests = None
     status = "pending"
-    call_duration = None
 
     if call_id:
         call_manager = get_call_manager()
@@ -190,24 +183,20 @@ def format_reservation_result(result) -> str:
             # Get basic reservation details
             restaurant_name = call_state.reservation_details.get("restaurant_name")
             party_size = call_state.reservation_details.get("party_size")
+            customer_name = call_state.reservation_details.get("customer_name")
+            special_requests = call_state.reservation_details.get("special_requests")
 
             # Get the actual confirmation details
             confirmation_number = call_state.confirmation_number
             status = call_state.status
 
             if call_state.start_time and call_state.end_time:
-                duration = (call_state.end_time - call_state.start_time).total_seconds()
-                call_duration = duration
+                (call_state.end_time - call_state.start_time).total_seconds()
 
             # Get the confirmed time from LLM analysis (stored in reservation_details)
             # If different from original, use that; otherwise fall back to original
             confirmed_time = call_state.reservation_details.get("confirmed_time")
-            if confirmed_time:
-                from logging import getLogger
-
-                logger = getLogger(__name__)
-                logger.info(f"✓ Using LLM-extracted confirmed time: {confirmed_time}")
-            else:
+            if not confirmed_time:
                 # Fall back to original requested time
                 confirmed_time = call_state.reservation_details.get("time", "")
 
@@ -237,30 +226,31 @@ def format_reservation_result(result) -> str:
 
         date_display = confirmed_date if confirmed_date else "tomorrow"
 
-        output.append(f"\n✓ Restaurant: {restaurant_name}")
-        output.append(f"✓ Party Size: {party_size} people")
-        output.append(f"✓ Date: {date_display}")
-        output.append(f"✓ Time: {time_display}")
+        output.append(f"\nRestaurant: {restaurant_name}")
+        output.append(f"Date: {date_display}")
+        output.append(f"Time: {time_display}")
+        output.append(f"Party Size: {party_size} people")
 
         if confirmation_number:
-            output.append(f"✓ Confirmation Number: {confirmation_number}")
+            output.append(f"Confirmation Number: {confirmation_number}")
         else:
-            output.append("⚠ Confirmation Number: Not received")
+            output.append("Confirmation Number: Not received")
+
+        if customer_name:
+            output.append(f"Reservation Name: {customer_name}")
+
+        if special_requests:
+            output.append(f"Special Instructions: {special_requests}")
 
         if status == "completed" and confirmation_number:
-            output.append("\n✓ Reservation confirmed! Enjoy your meal!")
+            output.append("\n✓ Reservation confirmed!")
         elif status == "completed":
-            output.append(
-                "\n⚠ Call completed but no confirmation received. Please verify with restaurant."
-            )
+            output.append("\n⚠ Call completed but no confirmation received.")
         else:
-            output.append(f"\n⚠ Status: {status.title()}")
-
-        if call_duration:
-            output.append(f"\n⏱ Call Duration: {call_duration:.1f}s")
-    # Fallback to the agent's final output if no structured data
-    elif hasattr(result, "final_output"):
-        output.append(f"\n{result.final_output}")
+            output.append(f"\nStatus: {status.title()}")
+    else:
+        # No structured data available - return empty to avoid duplication
+        return ""
 
     output.append("\n" + "=" * 60)
 

@@ -12,8 +12,10 @@ import logging
 import os
 from contextlib import asynccontextmanager, suppress
 
+import uuid
+
 import uvicorn
-from agents import Agent, Runner
+from agents import Agent, Runner, SQLiteSession
 from fastapi import (
     FastAPI,
     WebSocket,
@@ -31,13 +33,21 @@ from concierge.agents import (
     ReservationAgent,
     format_reservation_result,
 )
-from concierge.agents.tools import find_restaurant
+from concierge.agents.cancellation_agent import CancellationAgent
+from concierge.agents.search_agent import SearchAgent
+from concierge.agents.tools import (
+    find_restaurant,
+    search_restaurants_llm,
+    lookup_reservation_from_history,
+    initiate_cancellation_call,
+)
 from concierge.config import get_config
-from concierge.guardrails.input_validator import (
+from concierge.guardrails import (
     input_validation_guardrail,
     party_size_guardrail,
+    output_validation_guardrail,
+    rate_limit_guardrail,
 )
-from concierge.guardrails.output_validator import output_validation_guardrail
 from concierge.services.call_manager import get_call_manager
 
 logger = logging.getLogger(__name__)
@@ -60,28 +70,58 @@ async def lifespan(_app: FastAPI):
     # Initialize agents
     logger.info("Initializing AI agents...")
 
-    # Tier 2: Reservation Agent (handles reservation logic + voice calls)
+    # Tier 2: Specialized Agents
+
+    # 1. Reservation Agent (handles reservation logic + voice calls)
     reservation_agent_instance = ReservationAgent(find_restaurant)
     reservation_agent = reservation_agent_instance.create()
+    logger.info("✓ Reservation Agent initialized")
 
-    # Tier 1: Orchestrator (routes requests)
-    orchestrator_instance = OrchestratorAgent(reservation_agent)
+    # 2. Cancellation Agent (handles cancellations + voice calls)
+    cancellation_agent_instance = CancellationAgent(
+        lookup_reservation_from_history, initiate_cancellation_call
+    )
+    cancellation_agent = cancellation_agent_instance.create()
+    logger.info("✓ Cancellation Agent initialized")
+
+    # 3. Search Agent (LLM-powered restaurant search)
+    search_agent_instance = SearchAgent(search_restaurants_llm)
+    search_agent = search_agent_instance.create()
+    logger.info("✓ Search Agent initialized")
+
+    # Tier 1: Orchestrator (routes requests to specialized agents)
+    orchestrator_instance = OrchestratorAgent(
+        reservation_agent=reservation_agent,
+        cancellation_agent=cancellation_agent,
+        search_agent=search_agent,
+    )
     orchestrator_agent = orchestrator_instance.create()
 
     # Add guardrails to the orchestrator
     orchestrator_agent.guardrails = [
-        input_validation_guardrail,
-        party_size_guardrail,
-        output_validation_guardrail,
+        rate_limit_guardrail,  # Rate limiting (5/hour, 20/day)
+        input_validation_guardrail,  # Input validation
+        party_size_guardrail,  # Party size validation
+        output_validation_guardrail,  # Output validation
     ]
 
     # Store agent in app state for dependency injection
     _app.state.orchestrator_agent = orchestrator_agent
 
     logger.info("✓ AI agents initialized successfully")
+    logger.info("  Architecture:")
+    logger.info("    Orchestrator → [Reservation | Cancellation | Search] Agents")
+    logger.info("    - Reservation Agent → Realtime Voice Call (booking)")
     logger.info(
-        "  Architecture: Orchestrator → Reservation Agent → Realtime Voice Call"
+        "    - Cancellation Agent → Realtime Voice Call (cancel) + Session Lookup"
     )
+    logger.info("    - Search Agent → LLM-powered Mock Search")
+    logger.info("  Guardrails:")
+    logger.info("    - Rate limiting (5/hour, 20/day)")
+    logger.info("    - Input/output validation")
+    logger.info("  Features:")
+    logger.info("    - SQLiteSession conversation memory")
+    logger.info("    - Multi-agent routing")
 
     yield
 
@@ -156,7 +196,8 @@ async def process_request(
 
     Request body:
         {
-            "user_input": "Book a table at Demo Restaurant for 4 people tomorrow at 7pm"
+            "user_input": "Book a table at Demo Restaurant for 4 people tomorrow at 7pm",
+            "session_id": "optional-session-id"  # Optional: for conversation memory
         }
 
     Returns:
@@ -164,12 +205,14 @@ async def process_request(
             "success": true,
             "message": "Reservation confirmed at Demo Restaurant...",
             "final_output": "...",
-            "formatted_result": "..."
+            "formatted_result": "...",
+            "session_id": "session-123"  # Returned for client to reuse
         }
     """
     try:
         data = await request.json()
         user_input = data.get("user_input")
+        session_id = data.get("session_id")
 
         if not user_input:
             return JSONResponse(
@@ -177,22 +220,24 @@ async def process_request(
                 content={"error": "Missing user_input field"},
             )
 
-        logger.info("=" * 70)
-        logger.info(f"📥 Processing request: {user_input}")
-        logger.info("=" * 70)
+        # Generate session_id if not provided (for conversation memory)
+        if not session_id:
+            session_id = f"session-{uuid.uuid4().hex[:12]}"
+            logger.debug(f"Generated session: {session_id}")
+        else:
+            logger.debug(f"Using session: {session_id}")
+
+        # Create session for conversation memory (SDK feature)
+        session = SQLiteSession(session_id, "conversations.db")
+
+        logger.info(f"Processing: {user_input[:80]}...")
 
         # Run the orchestrator using the SDK Runner (async version)
-        # We use await runner.run() instead of run_sync() because we're already
-        # in an async context (FastAPI). run_sync() would try to create a new
-        # event loop which conflicts with the existing one.
+        # Pass session to enable conversation memory across turns
         runner = Runner()
-        result = await runner.run(starting_agent=orchestrator_agent, input=user_input)
-
-        # Debug: Log result object structure
-        logger.info(f"🔍 Result type: {type(result).__name__}")
-        logger.info(f"🔍 Result attributes: {dir(result)}")
-        if hasattr(result, "__dict__"):
-            logger.info(f"🔍 Result dict: {result.__dict__.keys()}")
+        result = await runner.run(
+            starting_agent=orchestrator_agent, input=user_input, session=session
+        )
 
         # Extract the final output
         final_output = ""
@@ -204,16 +249,14 @@ async def process_request(
         # Format the result
         formatted_result = format_reservation_result(result)
 
-        logger.info("=" * 70)
-        logger.info("✓ Request processed successfully")
-        logger.info(f"Final output: {final_output}")
-        logger.info("=" * 70)
+        logger.info("Request processed successfully")
 
         return {
             "success": True,
             "message": "Request processed successfully",
             "final_output": final_output,
             "formatted_result": formatted_result,
+            "session_id": session_id,  # Return session_id for client to reuse
         }
 
     except Exception as e:
@@ -265,10 +308,11 @@ async def generate_twiml(call_id: str = Query(..., description="Unique call ID")
                 "date": reservation_details.get("date", ""),
                 "time": reservation_details.get("time", ""),
                 "customer_name": reservation_details.get("customer_name", ""),
+                "confirmation_number": reservation_details.get(
+                    "confirmation_number", ""
+                ),
+                "call_type": reservation_details.get("call_type", "reservation"),
             }
-        )
-        logger.info(
-            f"Passing reservation details via custom parameters: {custom_params}"
         )
 
     # Build parameter string for TwiML
@@ -291,15 +335,13 @@ async def generate_twiml(call_id: str = Query(..., description="Unique call ID")
             <Parameter name="date" value="{custom_params.get('date', '')}" />
             <Parameter name="time" value="{custom_params.get('time', '')}" />
             <Parameter name="customer_name" value="{custom_params.get('customer_name', '')}" />
+            <Parameter name="confirmation_number" value="{custom_params.get('confirmation_number', '')}" />
+            <Parameter name="call_type" value="{custom_params.get('call_type', 'reservation')}" />
         </Stream>
     </Connect>
 </Response>"""
 
-    logger.info("=" * 70)
-    logger.info(f"📞 Generated TwiML for call {call_id}")
-    logger.info(f"🔗 WebSocket URL: {websocket_url}")
-    logger.info(f"📄 TwiML Response:\n{twiml}")
-    logger.info("=" * 70)
+    logger.info(f"Generated TwiML for call {call_id}")
     return Response(content=twiml, media_type="text/xml")
 
 
@@ -313,24 +355,17 @@ async def twilio_status_callback(request: Request):
     form_data = await request.form()
     data = dict(form_data)
 
-    # Log all received data for debugging
-    logger.info("=" * 70)
-    logger.info("Twilio status callback received")
-    logger.info(f"  Method: {request.method}")
-    logger.info(f"  All data: {data}")
-    logger.info("=" * 70)
-
     # Extract key fields
     call_sid = data.get("CallSid")
     call_status = data.get("CallStatus")
     error_code = data.get("ErrorCode")
     error_message = data.get("ErrorMessage")
 
-    if call_sid:
-        logger.info(f"📞 Call {call_sid}: Status={call_status}")
+    if call_sid and call_status:
+        logger.debug(f"Call {call_sid}: {call_status}")
 
     if error_code:
-        logger.error(f"❌ Twilio error {error_code}: {error_message}")
+        logger.error(f"Twilio error {error_code}: {error_message}")
 
     return Response(content="OK", media_type="text/plain")
 
@@ -344,10 +379,7 @@ async def handle_media_stream(websocket: WebSocket):
 
     Reservation details are passed via Twilio custom parameters in the 'start' event.
     """
-    logger.info("=" * 70)
-    logger.info("🔌 Twilio Media Stream WebSocket connection received")
-    logger.info(f"  Client: {websocket.client}")
-    logger.info("=" * 70)
+    logger.debug(f"WebSocket connection from {websocket.client}")
 
     try:
         # Import TwilioHandler
@@ -360,7 +392,7 @@ async def handle_media_stream(websocket: WebSocket):
         await handler.start()
         await handler.wait_until_done()
 
-        logger.info("✓ Call completed")
+        logger.debug("Call completed")
 
     except WebSocketDisconnect:
         logger.info("WebSocket disconnected")

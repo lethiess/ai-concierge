@@ -100,6 +100,7 @@ class ReservationAgent:
                     "time": time,
                     "customer_name": customer_name,
                     "special_requests": special_requests,
+                    "call_type": "reservation",  # Mark as reservation call
                 }
 
                 # Create restaurant object (in real implementation, this would come from lookup)
@@ -119,9 +120,18 @@ class ReservationAgent:
                     "success": result.status == "confirmed",
                     "status": result.status,
                     "confirmation_number": result.confirmation_number,
+                    "confirmed_time": result.confirmed_time,  # Actual time from transcript
+                    "confirmed_date": result.confirmed_date,  # Actual date if changed
                     "message": result.message,
                     "call_duration": result.call_duration,
                     "call_id": result.call_id,
+                    # Include full reservation details for session lookup
+                    "restaurant_name": restaurant_name,
+                    "restaurant_phone": restaurant_phone,
+                    "party_size": party_size,
+                    "date": date,
+                    "time": time,
+                    "customer_name": customer_name,
                 }
 
             # Load instructions from template with current date/time context
