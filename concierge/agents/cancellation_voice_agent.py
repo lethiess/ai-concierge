@@ -251,9 +251,10 @@ class CancellationVoiceAgent:
                 )
 
                 # Check if transcript analysis found a cancellation reference number
+                # (optional - most restaurants don't provide one)
                 if call_state.confirmation_number:
                     confirmation_msg += (
-                        f" Cancellation reference: {call_state.confirmation_number}"
+                        f" Restaurant noted: {call_state.confirmation_number}"
                     )
 
                 return {

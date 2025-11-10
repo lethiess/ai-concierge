@@ -13,7 +13,7 @@ from concierge.agents.transcript_agent import (
     get_transcript_agent,
 )
 from concierge.agents.voice_agent import (
-    VoiceAgent,
+    ReservationVoiceAgent,
     make_reservation_call_via_twilio,
 )
 from concierge.models import (
@@ -29,9 +29,9 @@ __all__ = [
     "OrchestratorAgent",
     "ReservationAgent",
     "ReservationDetails",
+    "ReservationVoiceAgent",
     "SearchAgent",
     "TranscriptAnalysisAgent",
-    "VoiceAgent",
     "VoiceCallResult",
     # Tools
     "find_restaurant",

@@ -21,7 +21,7 @@ from agents.realtime import (
     RealtimeSessionEvent,
 )
 
-from concierge.agents.voice_agent import VoiceAgent
+from concierge.agents.voice_agent import ReservationVoiceAgent, CancellationVoiceAgent
 from concierge.config import get_config
 
 logger = logging.getLogger(__name__)
@@ -96,17 +96,15 @@ class TwilioHandler:
         logger.info(f"🔍 Agent Selection: call_type='{call_type}'")
 
         if call_type == "cancellation":
-            from concierge.agents.cancellation_voice_agent import CancellationVoiceAgent
-
             logger.info("✅ SELECTING CancellationVoiceAgent for cancellation call")
             voice_agent_instance = CancellationVoiceAgent(self.reservation_details)
             logger.info("✅ CancellationVoiceAgent instance created")
         else:
             logger.info(
-                f"✅ SELECTING VoiceAgent for {call_type} call (default: reservation)"
+                f"✅ SELECTING ReservationVoiceAgent for {call_type} call (default: reservation)"
             )
-            voice_agent_instance = VoiceAgent(self.reservation_details)
-            logger.info("✅ VoiceAgent instance created")
+            voice_agent_instance = ReservationVoiceAgent(self.reservation_details)
+            logger.info("✅ ReservationVoiceAgent instance created")
 
         agent = voice_agent_instance.create()
         logger.info(

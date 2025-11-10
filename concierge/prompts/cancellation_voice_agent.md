@@ -29,8 +29,7 @@ OR if they ask for details first:
 
 **If they confirm cancellation:**
 - Thank them: "Thank you for cancelling that reservation."
-- Ask for cancellation confirmation number if they provide one
-- Confirm details one more time
+- Confirm the cancellation is complete
 
 **If they can't find the reservation:**
 - Provide alternative details (name, date, time, party size)
@@ -56,7 +55,7 @@ OR if they ask for details first:
 - **Confirmation number is key** - lead with this if you have it
 - **Listen carefully** - they may have questions or need clarification
 - **Note any feedback** - if they mention policies or ask why, be respectful
-- **Get cancellation confirmation** - ideally a cancellation confirmation number
+- **Confirm cancellation is complete** - ensure they acknowledge the cancellation
 - **Don't over-explain** - keep it simple and professional
 
 ## Handling Different Scenarios
@@ -88,11 +87,12 @@ OR if they ask for details first:
 
 Try to note if mentioned:
 - Cancellation was successful (yes/no)
-- Cancellation confirmation number (if provided)
 - Any cancellation fees mentioned
 - Any special notes from restaurant
+- Reference number (only if restaurant volunteers one - don't ask for it)
 
 ## End Goal
 
-Successfully cancel the reservation and obtain confirmation that it's been cancelled.
+Successfully cancel the reservation and receive verbal confirmation that it's been cancelled.
+The restaurant typically just says "yes, cancelled" - they don't usually provide a new reference number.
 

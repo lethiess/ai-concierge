@@ -8,8 +8,8 @@ from concierge.agents import (
     CancellationAgent,
     OrchestratorAgent,
     ReservationAgent,
+    ReservationVoiceAgent,
     SearchAgent,
-    VoiceAgent,
     find_restaurant,
 )
 from concierge.agents.tools import (
@@ -126,8 +126,8 @@ class TestAgentCreation:
         assert search_agent in orchestrator.handoffs
 
     @pytest.mark.skip(reason="RealtimeAgent requires specific SDK setup")
-    def test_create_voice_agent(self):
-        """Test voice agent creation with reservation details using class."""
+    def test_create_reservation_voice_agent(self):
+        """Test reservation voice agent creation with reservation details using class."""
         reservation_details = {
             "restaurant_name": "Test Restaurant",
             "restaurant_phone": "+1234567890",
@@ -138,7 +138,7 @@ class TestAgentCreation:
             "special_requests": "Window seat please",
         }
 
-        voice_agent_instance = VoiceAgent(reservation_details)
+        voice_agent_instance = ReservationVoiceAgent(reservation_details)
         voice_agent = voice_agent_instance.create()
 
         assert isinstance(voice_agent, RealtimeAgent)
@@ -146,8 +146,8 @@ class TestAgentCreation:
         assert "Test Restaurant" in voice_agent.instructions
 
     @pytest.mark.skip(reason="RealtimeAgent requires specific SDK setup")
-    def test_voice_agent_class(self):
-        """Test voice agent creation using class."""
+    def test_reservation_voice_agent_class(self):
+        """Test reservation voice agent creation using class."""
         reservation_details = {
             "restaurant_name": "Test Restaurant",
             "restaurant_phone": "+1234567890",
@@ -158,7 +158,7 @@ class TestAgentCreation:
             "special_requests": "Window seat please",
         }
 
-        voice_agent_instance = VoiceAgent(reservation_details)
+        voice_agent_instance = ReservationVoiceAgent(reservation_details)
         voice_agent = voice_agent_instance.create()
 
         assert isinstance(voice_agent, RealtimeAgent)

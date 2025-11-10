@@ -1,4 +1,4 @@
-"""Voice agent for making real-time restaurant reservation calls using OpenAI Realtime API."""
+"""Reservation voice agent for making real-time restaurant reservation calls using OpenAI Realtime API."""
 
 import asyncio
 import logging
@@ -16,8 +16,8 @@ import contextlib
 logger = logging.getLogger(__name__)
 
 
-class VoiceAgent:
-    """Voice agent for making real-time restaurant reservation calls.
+class ReservationVoiceAgent:
+    """Reservation voice agent for making real-time restaurant reservation calls.
 
     This agent uses OpenAI's Realtime API for full-duplex audio conversations,
     enabling natural phone calls to restaurants via Twilio Media Streams.
@@ -28,7 +28,7 @@ class VoiceAgent:
     """
 
     def __init__(self, reservation_details: dict) -> None:
-        """Initialize the voice agent.
+        """Initialize the reservation voice agent.
 
         Args:
             reservation_details: Dictionary containing reservation information:
@@ -44,7 +44,7 @@ class VoiceAgent:
         self._agent: RealtimeAgent | None = None
 
         logger.info(
-            "VoiceAgent initialized for %s",
+            "ReservationVoiceAgent initialized for %s",
             reservation_details.get("restaurant_name", "unknown restaurant"),
         )
 
@@ -79,7 +79,7 @@ class VoiceAgent:
 
             # Load and format prompt from template
             instructions = load_prompt(
-                "voice_agent",
+                "reservation_voice_agent",
                 restaurant_name=restaurant_name,
                 party_size=party_size,
                 date=date,
@@ -97,11 +97,11 @@ class VoiceAgent:
             )
 
             logger.info(
-                "✅✅✅ Realtime VoiceAgent (RESERVATION) created for calling %s",
+                "✅ ReservationVoiceAgent created for calling %s",
                 restaurant_name,
             )
-            logger.info("✅✅✅ Agent name: 'Restaurant Reservation Voice Agent'")
-            logger.info("✅✅✅ Agent instructions loaded from: voice_agent.md")
+            logger.info("✅ Agent name: 'Restaurant Reservation Voice Agent'")
+            logger.info("✅ Agent instructions loaded from: reservation_voice_agent.md")
 
         return self._agent
 
@@ -110,7 +110,7 @@ class VoiceAgent:
         """Get the agent instance (creates it if needed).
 
         Returns:
-            The voice agent
+            The reservation voice agent
         """
         return self.create()
 

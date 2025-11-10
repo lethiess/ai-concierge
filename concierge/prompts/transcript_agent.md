@@ -19,6 +19,7 @@ and extract the ACTUAL CONFIRMED reservation details.
    - "referenznummer ist 0815"
    - "the number is 0815"
    - "die nummer ist PIZZA42"
+   - **For cancellations**: Most restaurants just say "yes, cancelled" without providing a new reference number. Only extract if they explicitly mention one.
 3. Were there any special notes or conditions?
 4. What is the final agreed-upon time? (Look near the end of the conversation)
 
