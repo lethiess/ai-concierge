@@ -37,15 +37,12 @@ def output_validation_guardrail(_context, _agent, output) -> GuardrailFunctionOu
 
     for pattern, description in sensitive_patterns:
         if re.search(pattern, output_text, re.IGNORECASE):
-            logger.warning(f"Potential {description} detected in output")
-            warnings.append(f"Output may contain {description}")
+            warnings.append(description)
 
     if warnings:
-        logger.warning("=" * 70)
-        logger.warning("🚨 GUARDRAIL TRIGGERED: Output Validation")
-        logger.warning("Reason: Sensitive information detected")
-        logger.warning(f"Details: {'; '.join(warnings)}")
-        logger.warning("=" * 70)
+        logger.warning(
+            f"Guardrail triggered: Sensitive information detected ({'; '.join(warnings)})"
+        )
         return GuardrailFunctionOutput(
             output_info=f"Security warning: {'; '.join(warnings)}. Output blocked.",
             tripwire_triggered=True,

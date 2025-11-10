@@ -121,11 +121,11 @@ class ConciergeCLI:
 
                     # Special handling for guardrail blocks
                     if error_msg == "Request blocked by guardrail" and detail_msg:
-                        print("\n" + "=" * 70)
+                        print("\n" + "=" * 80)
                         print("🚨 REQUEST BLOCKED BY GUARDRAIL")
-                        print("=" * 70)
+                        print("=" * 80)
                         print(f"{detail_msg}")
-                        print("=" * 70)
+                        print("=" * 80)
                     else:
                         print(
                             f"\n⚠ Server error (status {response.status_code}): {error_msg}"

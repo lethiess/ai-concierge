@@ -48,10 +48,7 @@ def input_validation_guardrail(_context, _agent, user_input) -> GuardrailFunctio
 
     # Check for empty input
     if not input_text or not input_text.strip():
-        logger.warning("=" * 70)
-        logger.warning("🚨 GUARDRAIL TRIGGERED: Input Validation")
-        logger.warning("Reason: Empty input detected")
-        logger.warning("=" * 70)
+        logger.warning("Guardrail triggered: Empty input detected")
         return GuardrailFunctionOutput(
             output_info="Input cannot be empty. Please provide a reservation request.",
             tripwire_triggered=True,
@@ -59,12 +56,9 @@ def input_validation_guardrail(_context, _agent, user_input) -> GuardrailFunctio
 
     # Check input length
     if len(input_text) > max_input_length:
-        logger.warning("=" * 70)
-        logger.warning("🚨 GUARDRAIL TRIGGERED: Input Validation")
         logger.warning(
-            f"Reason: Input too long ({len(input_text)} chars, max: {max_input_length})"
+            f"Guardrail triggered: Input too long ({len(input_text)} > {max_input_length} chars)"
         )
-        logger.warning("=" * 70)
         return GuardrailFunctionOutput(
             output_info=f"Input too long (max {max_input_length} characters). Please shorten your request.",
             tripwire_triggered=True,
@@ -74,10 +68,9 @@ def input_validation_guardrail(_context, _agent, user_input) -> GuardrailFunctio
     input_text_lower = input_text.lower()
     for pattern in blocked_patterns:
         if re.search(pattern, input_text_lower):
-            logger.warning("=" * 70)
-            logger.warning("🚨 GUARDRAIL TRIGGERED: Input Validation")
-            logger.warning(f"Reason: Suspicious pattern detected ({pattern})")
-            logger.warning("=" * 70)
+            logger.warning(
+                f"Guardrail triggered: Suspicious pattern detected ({pattern})"
+            )
             return GuardrailFunctionOutput(
                 output_info="Input contains suspicious content. Please rephrase your request.",
                 tripwire_triggered=True,
@@ -128,11 +121,9 @@ def party_size_guardrail(_context, _agent, user_input) -> GuardrailFunctionOutpu
         num = int(num_str)
         # If we find a number that looks like a party size but is invalid
         if num < min_party_size or num > max_party_size:
-            logger.warning("=" * 70)
-            logger.warning("🚨 GUARDRAIL TRIGGERED: Party Size Validation")
-            logger.warning(f"Reason: Invalid party size detected ({num} people)")
-            logger.warning(f"Allowed range: {min_party_size}-{max_party_size} people")
-            logger.warning("=" * 70)
+            logger.warning(
+                f"Guardrail triggered: Invalid party size ({num} people, allowed: {min_party_size}-{max_party_size})"
+            )
             return GuardrailFunctionOutput(
                 output_info=f"Party size must be between {min_party_size} and {max_party_size} people.",
                 tripwire_triggered=True,
