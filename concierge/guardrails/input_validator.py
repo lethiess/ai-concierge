@@ -30,16 +30,19 @@ async def input_validation_guardrail(
     Returns:
         GuardrailFunctionOutput indicating if validation passed
     """
-    # Extract string content from input (SDK may pass list of messages)
+    # Extract the LATEST user message only (not full conversation history)
+    # to avoid checking previous messages which were already validated
     if isinstance(input, list):
-        # Extract text from message list
-        text_parts = []
-        for msg in input:
-            if isinstance(msg, dict) and "content" in msg:
-                text_parts.append(str(msg["content"]))
-            elif hasattr(msg, "content"):
-                text_parts.append(str(msg.content))
-        input_text = " ".join(text_parts)
+        # Get only the last user message
+        latest_user_msg = None
+        for msg in reversed(input):
+            if isinstance(msg, dict) and msg.get("role") == "user":
+                latest_user_msg = str(msg.get("content", ""))
+                break
+            if hasattr(msg, "role") and msg.role == "user":
+                latest_user_msg = str(msg.content)
+                break
+        input_text = latest_user_msg if latest_user_msg else ""
     else:
         input_text = str(input)
 
@@ -99,7 +102,7 @@ async def party_size_guardrail(
     agent: Agent,
     input: str | list[TResponseInputItem],
 ) -> GuardrailFunctionOutput:
-    """Validate party size constraints.
+    """Validate party size constraints for reservation requests only.
 
     Args:
         context: The guardrail context
@@ -109,18 +112,30 @@ async def party_size_guardrail(
     Returns:
         GuardrailFunctionOutput indicating if validation passed
     """
-    # Extract string content from input (SDK may pass list of messages)
+    # Extract the LATEST user message only (not full conversation history)
+    # to avoid false positives from confirmation numbers, etc.
     if isinstance(input, list):
-        # Extract text from message list
-        text_parts = []
-        for msg in input:
-            if isinstance(msg, dict) and "content" in msg:
-                text_parts.append(str(msg["content"]))
-            elif hasattr(msg, "content"):
-                text_parts.append(str(msg.content))
-        input_text = " ".join(text_parts)
+        # Get only the last user message
+        latest_user_msg = None
+        for msg in reversed(input):
+            if isinstance(msg, dict) and msg.get("role") == "user":
+                latest_user_msg = str(msg.get("content", ""))
+                break
+            if hasattr(msg, "role") and msg.role == "user":
+                latest_user_msg = str(msg.content)
+                break
+        input_text = latest_user_msg if latest_user_msg else ""
     else:
         input_text = str(input)
+
+    # Skip validation for cancellation requests
+    input_lower = input_text.lower()
+    cancellation_keywords = ["cancel", "cancellation", "remove"]
+    if any(keyword in input_lower for keyword in cancellation_keywords):
+        return GuardrailFunctionOutput(
+            output_info="Party size validation skipped for cancellation",
+            tripwire_triggered=False,
+        )
 
     # This is a simple check - the actual party size will be extracted by the agent
     # We just check for obviously invalid values mentioned in the text

@@ -13,9 +13,10 @@ from concierge.agents import (
     find_restaurant,
 )
 from concierge.agents.tools import (
-    search_restaurants_llm,
-    lookup_reservation_from_history,
     initiate_cancellation_call,
+    initiate_reservation_call,
+    lookup_reservation_from_history,
+    search_restaurants_llm,
 )
 from concierge.services.restaurant_service import RestaurantService
 
@@ -25,7 +26,9 @@ class TestAgentCreation:
 
     def test_create_reservation_agent(self):
         """Test reservation agent creation using class."""
-        reservation_agent_instance = ReservationAgent(find_restaurant)
+        reservation_agent_instance = ReservationAgent(
+            find_restaurant, initiate_reservation_call
+        )
         reservation_agent = reservation_agent_instance.create()
 
         assert isinstance(reservation_agent, Agent)
@@ -35,7 +38,9 @@ class TestAgentCreation:
 
     def test_reservation_agent_class(self):
         """Test reservation agent creation using class."""
-        reservation_agent_instance = ReservationAgent(find_restaurant)
+        reservation_agent_instance = ReservationAgent(
+            find_restaurant, initiate_reservation_call
+        )
         reservation_agent = reservation_agent_instance.create()
 
         assert isinstance(reservation_agent, Agent)
@@ -46,7 +51,9 @@ class TestAgentCreation:
 
     def test_create_orchestrator_agent(self):
         """Test orchestrator agent creation with specialized agents using class."""
-        reservation_agent_instance = ReservationAgent(find_restaurant)
+        reservation_agent_instance = ReservationAgent(
+            find_restaurant, initiate_reservation_call
+        )
         reservation_agent = reservation_agent_instance.create()
         orchestrator_instance = OrchestratorAgent(reservation_agent=reservation_agent)
         orchestrator = orchestrator_instance.create()
@@ -57,7 +64,9 @@ class TestAgentCreation:
 
     def test_orchestrator_agent_class(self):
         """Test orchestrator agent creation using class."""
-        reservation_agent_instance = ReservationAgent(find_restaurant)
+        reservation_agent_instance = ReservationAgent(
+            find_restaurant, initiate_reservation_call
+        )
         reservation_agent = reservation_agent_instance.create()
         orchestrator_instance = OrchestratorAgent(reservation_agent=reservation_agent)
         orchestrator = orchestrator_instance.create()
@@ -70,7 +79,9 @@ class TestAgentCreation:
 
     def test_agent_handoff_chain(self):
         """Test the handoff chain: Orchestrator → Reservation Agent."""
-        reservation_agent_instance = ReservationAgent(find_restaurant)
+        reservation_agent_instance = ReservationAgent(
+            find_restaurant, initiate_reservation_call
+        )
         reservation_agent = reservation_agent_instance.create()
         orchestrator_instance = OrchestratorAgent(reservation_agent=reservation_agent)
         orchestrator = orchestrator_instance.create()
@@ -100,7 +111,9 @@ class TestAgentCreation:
 
     def test_orchestrator_with_all_agents(self):
         """Test orchestrator with all 3 specialized agents."""
-        reservation_agent_instance = ReservationAgent(find_restaurant)
+        reservation_agent_instance = ReservationAgent(
+            find_restaurant, initiate_reservation_call
+        )
         reservation_agent = reservation_agent_instance.create()
 
         cancellation_agent_instance = CancellationAgent(
@@ -169,7 +182,9 @@ class TestAgentCreation:
 
     def test_multiple_specialized_agents(self):
         """Test orchestrator with multiple specialized agents."""
-        reservation_agent_instance = ReservationAgent(find_restaurant)
+        reservation_agent_instance = ReservationAgent(
+            find_restaurant, initiate_reservation_call
+        )
         reservation_agent = reservation_agent_instance.create()
         # In the future, we might have cancellation_agent, query_agent, etc.
         orchestrator_instance = OrchestratorAgent(reservation_agent)

@@ -45,6 +45,86 @@ def find_restaurant(restaurant_name: str) -> dict:
 
 
 @function_tool
+async def initiate_reservation_call(
+    restaurant_name: str,
+    restaurant_phone: str,
+    party_size: int,
+    date: str,
+    time: str,
+    customer_name: str | None = None,
+    special_requests: str | None = None,
+) -> dict:
+    """Initiate a real-time voice call to make the restaurant reservation.
+
+    This triggers a Twilio call that uses OpenAI Realtime API for the conversation.
+
+    Args:
+        restaurant_name: Name of the restaurant
+        restaurant_phone: Phone number to call
+        party_size: Number of people
+        date: Reservation date
+        time: Reservation time
+        customer_name: Customer name for the reservation
+        special_requests: Any special requests
+
+    Returns:
+        Dictionary with call initiation result
+    """
+    config = get_config()
+    logger.info(f"Initiating realtime voice call to {restaurant_name}")
+
+    # Import here to avoid circular dependency
+    from concierge.agents.voice_agent import make_reservation_call_via_twilio
+    from concierge.models import Restaurant
+
+    # Use concierge name from config if not provided
+    if not customer_name:
+        customer_name = config.concierge_name
+        logger.info(f"Using concierge name from config: {customer_name}")
+
+    # Prepare reservation details
+    reservation_details = {
+        "restaurant_name": restaurant_name,
+        "restaurant_phone": restaurant_phone,
+        "party_size": party_size,
+        "date": date,
+        "time": time,
+        "customer_name": customer_name,
+        "special_requests": special_requests,
+        "call_type": "reservation",  # Mark as reservation call
+    }
+
+    # Create restaurant object (in real implementation, this would come from lookup)
+    restaurant = Restaurant(
+        name=restaurant_name,
+        phone_number=restaurant_phone,
+        address="",  # Not needed for call
+        cuisine_type="",  # Not needed for call
+    )
+
+    # Make the realtime voice call
+    result = await make_reservation_call_via_twilio(reservation_details, restaurant)
+
+    return {
+        "success": result.status == "confirmed",
+        "status": result.status,
+        "confirmation_number": result.confirmation_number,
+        "confirmed_time": result.confirmed_time,  # Actual time from transcript
+        "confirmed_date": result.confirmed_date,  # Actual date if changed
+        "message": result.message,
+        "call_duration": result.call_duration,
+        "call_id": result.call_id,
+        # Include full reservation details for session lookup
+        "restaurant_name": restaurant_name,
+        "restaurant_phone": restaurant_phone,
+        "party_size": party_size,
+        "date": date,
+        "time": time,
+        "customer_name": customer_name,
+    }
+
+
+@function_tool
 def search_restaurants_llm(
     query: str,
     cuisine: str | None = None,

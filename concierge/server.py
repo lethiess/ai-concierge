@@ -28,16 +28,16 @@ from concierge.agents.cancellation_agent import CancellationAgent
 from concierge.agents.search_agent import SearchAgent
 from concierge.agents.tools import (
     find_restaurant,
-    search_restaurants_llm,
-    lookup_reservation_from_history,
     initiate_cancellation_call,
+    initiate_reservation_call,
+    lookup_reservation_from_history,
+    search_restaurants_llm,
 )
 from concierge.config import get_config
 from concierge.guardrails import (
     input_validation_guardrail,
     party_size_guardrail,
     output_validation_guardrail,
-    rate_limit_guardrail,
 )
 from concierge.services.call_manager import get_call_manager
 
@@ -64,7 +64,9 @@ async def lifespan(_app: FastAPI):
     # Tier 2: Specialized Agents
 
     # 1. Reservation Agent (handles reservation logic + voice calls)
-    reservation_agent_instance = ReservationAgent(find_restaurant)
+    reservation_agent_instance = ReservationAgent(
+        find_restaurant, initiate_reservation_call
+    )
     reservation_agent = reservation_agent_instance.create()
     logger.info("✓ Reservation Agent initialized")
 
@@ -87,7 +89,6 @@ async def lifespan(_app: FastAPI):
         cancellation_agent=cancellation_agent,
         search_agent=search_agent,
         input_guardrails=[
-            rate_limit_guardrail,  # Rate limiting (5/hour, 20/day)
             input_validation_guardrail,  # Input validation
             party_size_guardrail,  # Party size validation
         ],
@@ -213,6 +214,23 @@ async def process_request(
                 if hasattr(e, "guardrail_result")
                 else "Request blocked by guardrail"
             )
+
+            # Add conversation turn to session so it continues properly
+            # This follows the pattern from the official SDK example:
+            # When a guardrail triggers, we need to complete the turn manually
+            try:
+                # Add the user message (if not already in session)
+                session.add_message({"role": "user", "content": user_input})
+                # Add assistant refusal message
+                session.add_message(
+                    {
+                        "role": "assistant",
+                        "content": f"I cannot process this request. {guardrail_message}",
+                    }
+                )
+            except Exception as session_error:
+                # If session update fails (e.g., duplicate), just log and continue
+                logger.debug(f"Session update after guardrail: {session_error}")
 
             return JSONResponse(
                 status_code=400,

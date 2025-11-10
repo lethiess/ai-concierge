@@ -29,8 +29,8 @@ class OrchestratorAgent:
     def __init__(
         self,
         reservation_agent: Agent,
-        cancellation_agent: Agent | None = None,
-        search_agent: Agent | None = None,
+        cancellation_agent: Agent,
+        search_agent: Agent,
         input_guardrails: list | None = None,
         output_guardrails: list | None = None,
     ) -> None:
@@ -38,19 +38,17 @@ class OrchestratorAgent:
 
         Args:
             reservation_agent: Agent for handling reservation requests (required)
-            cancellation_agent: Agent for handling cancellations (optional)
-            search_agent: Agent for restaurant search (optional)
+            cancellation_agent: Agent for handling cancellations (required)
+            search_agent: Agent for restaurant search (required)
             input_guardrails: List of input guardrails to apply (optional)
             output_guardrails: List of output guardrails to apply (optional)
         """
         # Build list of specialized agents
-        self.specialized_agents: list[Agent] = [reservation_agent]
-
-        if cancellation_agent:
-            self.specialized_agents.append(cancellation_agent)
-
-        if search_agent:
-            self.specialized_agents.append(search_agent)
+        self.specialized_agents: list[Agent] = [
+            reservation_agent,
+            cancellation_agent,
+            search_agent,
+        ]
 
         self.config = get_config()
         self.input_guardrails = input_guardrails or []

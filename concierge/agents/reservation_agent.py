@@ -2,13 +2,12 @@
 
 import logging
 from collections.abc import Callable
+from datetime import datetime
 
-from agents import Agent, function_tool
+from agents import Agent
 
 from concierge.config import get_config
-from concierge.models import Restaurant
 from concierge.prompts import load_prompt
-from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -24,17 +23,22 @@ class ReservationAgent:
 
     Attributes:
         restaurant_lookup_tool: The restaurant lookup function tool
+        reservation_call_tool: The reservation call initiation tool
         config: Application configuration
         _agent: The underlying Agent instance (created lazily)
     """
 
-    def __init__(self, restaurant_lookup_tool: Callable) -> None:
+    def __init__(
+        self, restaurant_lookup_tool: Callable, reservation_call_tool: Callable
+    ) -> None:
         """Initialize the reservation agent.
 
         Args:
             restaurant_lookup_tool: The restaurant lookup function tool
+            reservation_call_tool: The reservation call initiation tool
         """
         self.restaurant_lookup_tool = restaurant_lookup_tool
+        self.reservation_call_tool = reservation_call_tool
         self.config = get_config()
         self._agent: Agent | None = None
 
@@ -50,90 +54,6 @@ class ReservationAgent:
             The agent is created lazily on first call and cached.
         """
         if self._agent is None:
-            # Create the call initiation tool with config defaults
-            config = self.config
-
-            @function_tool
-            async def initiate_reservation_call(
-                restaurant_name: str,
-                restaurant_phone: str,
-                party_size: int,
-                date: str,
-                time: str,
-                customer_name: str | None = None,
-                special_requests: str | None = None,
-            ) -> dict:
-                """Initiate a real-time voice call to make the restaurant reservation.
-
-                This triggers a Twilio call that uses OpenAI Realtime API for the conversation.
-
-                Args:
-                    restaurant_name: Name of the restaurant
-                    restaurant_phone: Phone number to call
-                    party_size: Number of people
-                    date: Reservation date
-                    time: Reservation time
-                    customer_name: Customer name for the reservation
-                    special_requests: Any special requests
-
-                Returns:
-                    Dictionary with call initiation result
-                """
-                # Import here to avoid circular dependency
-                from concierge.agents.voice_agent import (
-                    make_reservation_call_via_twilio,
-                )
-
-                logger.info(f"Initiating realtime voice call to {restaurant_name}")
-
-                # Use concierge name from config if not provided
-                if not customer_name:
-                    customer_name = config.concierge_name
-                    logger.info(f"Using concierge name from config: {customer_name}")
-
-                # Prepare reservation details
-                reservation_details = {
-                    "restaurant_name": restaurant_name,
-                    "restaurant_phone": restaurant_phone,
-                    "party_size": party_size,
-                    "date": date,
-                    "time": time,
-                    "customer_name": customer_name,
-                    "special_requests": special_requests,
-                    "call_type": "reservation",  # Mark as reservation call
-                }
-
-                # Create restaurant object (in real implementation, this would come from lookup)
-                restaurant = Restaurant(
-                    name=restaurant_name,
-                    phone_number=restaurant_phone,
-                    address="",  # Not needed for call
-                    cuisine_type="",  # Not needed for call
-                )
-
-                # Make the realtime voice call
-                result = await make_reservation_call_via_twilio(
-                    reservation_details, restaurant
-                )
-
-                return {
-                    "success": result.status == "confirmed",
-                    "status": result.status,
-                    "confirmation_number": result.confirmation_number,
-                    "confirmed_time": result.confirmed_time,  # Actual time from transcript
-                    "confirmed_date": result.confirmed_date,  # Actual date if changed
-                    "message": result.message,
-                    "call_duration": result.call_duration,
-                    "call_id": result.call_id,
-                    # Include full reservation details for session lookup
-                    "restaurant_name": restaurant_name,
-                    "restaurant_phone": restaurant_phone,
-                    "party_size": party_size,
-                    "date": date,
-                    "time": time,
-                    "customer_name": customer_name,
-                }
-
             # Load instructions from template with current date/time context
             current_datetime = datetime.now().strftime("%A, %B %d, %Y at %I:%M %p")
             instructions = load_prompt(
@@ -144,7 +64,7 @@ class ReservationAgent:
                 name="Reservation Agent",
                 model=self.config.agent_model,
                 instructions=instructions,
-                tools=[self.restaurant_lookup_tool, initiate_reservation_call],
+                tools=[self.restaurant_lookup_tool, self.reservation_call_tool],
                 # Note: output_type removed to allow tool calls before completion
                 # The agent will call tools first, then return text describing the result
             )

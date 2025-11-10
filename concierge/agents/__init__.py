@@ -7,7 +7,7 @@ from concierge.agents.orchestrator_agent import (
 )
 from concierge.agents.reservation_agent import ReservationAgent
 from concierge.agents.search_agent import SearchAgent
-from concierge.agents.tools import find_restaurant
+from concierge.agents.tools import find_restaurant, initiate_reservation_call
 from concierge.agents.transcript_agent import (
     TranscriptAnalysisAgent,
     get_transcript_agent,
@@ -35,6 +35,7 @@ __all__ = [
     "VoiceCallResult",
     # Tools
     "find_restaurant",
+    "initiate_reservation_call",
     # Utilities
     "format_reservation_result",
     "get_transcript_agent",
