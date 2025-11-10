@@ -1,19 +1,10 @@
-"""FastAPI server for handling Twilio Media Streams and OpenAI Realtime API.
-
-This server:
-1. Accepts Twilio call webhooks
-2. Generates TwiML to route calls to Media Streams
-3. Handles WebSocket connections from Twilio
-4. Bridges audio between Twilio and OpenAI Realtime API
-5. Manages call state and transcripts
-"""
+"""FastAPI server for handling Twilio Media Streams and OpenAI Realtime API and agent orchestration."""
 
 import logging
 import os
 from contextlib import asynccontextmanager, suppress
-
+from concierge.config import setup_logging
 import uuid
-
 import uvicorn
 from agents import Agent, Runner, SQLiteSession
 from fastapi import (
@@ -108,21 +99,6 @@ async def lifespan(_app: FastAPI):
     # Store agent in app state for dependency injection
     _app.state.orchestrator_agent = orchestrator_agent
 
-    logger.info("✓ AI agents initialized successfully")
-    logger.info("  Architecture:")
-    logger.info("    Orchestrator → [Reservation | Cancellation | Search] Agents")
-    logger.info("    - Reservation Agent → Realtime Voice Call (booking)")
-    logger.info(
-        "    - Cancellation Agent → Realtime Voice Call (cancel) + Session Lookup"
-    )
-    logger.info("    - Search Agent → LLM-powered Mock Search")
-    logger.info("  Guardrails:")
-    logger.info("    - Rate limiting (5/hour, 20/day)")
-    logger.info("    - Input/output validation")
-    logger.info("  Features:")
-    logger.info("    - SQLiteSession conversation memory")
-    logger.info("    - Multi-agent routing")
-
     yield
 
     logger.info("Shutting down AI Concierge Voice Server")
@@ -164,18 +140,6 @@ def get_orchestrator_agent(request: Request) -> Agent:
 
         raise HTTPException(status_code=503, detail="Agents not initialized yet")
     return agent
-
-
-@app.get("/")
-async def root():
-    """Root endpoint with server info."""
-    config = get_config()
-    return {
-        "service": "AI Concierge Voice Server",
-        "version": "0.1.0",
-        "status": "running",
-        "public_domain": config.public_domain,
-    }
 
 
 @app.get("/health")
@@ -407,7 +371,6 @@ def run_server():
 
     This is the main entry point for the server.
     """
-    from concierge.config import setup_logging
 
     # Setup logging
     setup_logging()

@@ -21,7 +21,6 @@ class ConciergeCLI:
 
         # Generate session_id for this CLI conversation (enables conversation memory)
         self.session_id = f"cli-{uuid.uuid4().hex[:12]}"
-        logger.info(f"CLI session_id: {self.session_id}")
 
         logger.info("AI Concierge CLI initialized as HTTP client")
 
@@ -30,24 +29,24 @@ class ConciergeCLI:
 
     def _display_config_status(self) -> None:
         """Display configuration status to the user."""
-        print("\n" + "=" * 60)
+        print("\n" + "=" * 80)
         print("AI CONCIERGE - Restaurant Reservation System")
         print("Powered by OpenAI Agents SDK + Realtime API")
-        print("\n" + "=" * 60)
+        print("\n" + "=" * 80)
         print(f"agent model: {self.config.agent_model}")
         print(f"realtime model: {self.config.realtime_model}")
         print(f"realtime voice: {self.config.realtime_voice}")
-        print("\n" + "=" * 60 + "\n")
+        print(f"session_id: {self.session_id}")
+        print("\n" + "=" * 80 + "\n")
 
     def run(self) -> None:
         """Run the CLI application."""
         print("Welcome! I can help you with restaurant reservations.\n")
         print("Examples:")
-        print('  "Book a table at Luigi\'s Pizza for 4 people tomorrow at 7pm"')
+        print('  "Book a table at Luigi\'s Pizza for 2 people today at 7pm"')
         print('  "Reserve 2 seats at New York Bar at Friday at 10:00 PM"')
-        print('  "Table for 6 at The Steakhouse next Tuesday at 8pm under John Smith"')
+        print('  "Search for highly rated Italian restaurants in Konstanz"')
         print('  "Cancel my reservation" (remembers from conversation!)\n')
-        print(f"Session ID: {self.session_id}")
         print("Type 'quit' or 'exit' to end the session.\n")
 
         while True:
@@ -79,9 +78,9 @@ class ConciergeCLI:
         Args:
             user_input: User's natural language request
         """
-        print("\n" + "-" * 60)
+        print("\n" + "-" * 80)
         print("Processing your request through AI Concierge...")
-        print("-" * 60 + "\n")
+        print("-" * 80 + "\n")
 
         try:
             # Send request to server API with session_id for conversation memory
@@ -130,13 +129,13 @@ class ConciergeCLI:
             print("Please try again or check the server logs.")
         except httpx.ConnectError:
             logger.exception("Cannot connect to server")
-            print(f"\n⚠ Cannot connect to server at {self.config.server_url}")
-            print("Make sure the server is running:")
+            print(f"\nCannot connect to server at {self.config.server_url}")
+            print("Make sure the server is running and the public domain is set.")
             print("  python -m concierge.server")
         except Exception as e:
-            logger.error(f"Error processing request: {e}", exc_info=True)
-            print(f"\n⚠ Error processing request: {e}")
-            print("\nPlease try again with a different request.")
+            logger.error(f"Unexpected error: {e}", exc_info=True)
+            print(f"\nAn unexpected error occurred: {e}")
+            print("Please try again or type 'quit' to exit.")
 
 
 def main() -> None:

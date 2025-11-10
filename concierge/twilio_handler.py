@@ -21,7 +21,8 @@ from agents.realtime import (
     RealtimeSessionEvent,
 )
 
-from concierge.agents.voice_agent import ReservationVoiceAgent, CancellationVoiceAgent
+from concierge.agents.voice_agent import ReservationVoiceAgent
+from concierge.agents.cancellation_voice_agent import CancellationVoiceAgent
 from concierge.config import get_config
 
 logger = logging.getLogger(__name__)
