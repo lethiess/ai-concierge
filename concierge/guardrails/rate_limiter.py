@@ -5,7 +5,13 @@ import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from agents import GuardrailFunctionOutput, input_guardrail
+from agents import (
+    Agent,
+    GuardrailFunctionOutput,
+    RunContextWrapper,
+    TResponseInputItem,
+    input_guardrail,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -141,8 +147,12 @@ def cleanup_old_records():
         logger.info(f"Cleaned up {deleted} old rate limit records")
 
 
-@input_guardrail(name="rate_limit_guardrail")
-def rate_limit_guardrail(_context, _agent, user_input) -> GuardrailFunctionOutput:
+@input_guardrail
+async def rate_limit_guardrail(
+    context: RunContextWrapper[None],
+    agent: Agent,
+    input: str | list[TResponseInputItem],
+) -> GuardrailFunctionOutput:
     """Rate limiting guardrail to prevent abuse.
 
     Limits:
@@ -150,9 +160,9 @@ def rate_limit_guardrail(_context, _agent, user_input) -> GuardrailFunctionOutpu
     - 20 requests per day per session
 
     Args:
-        _context: The guardrail context (contains session info)
-        _agent: The agent being run
-        user_input: Raw user input string
+        context: The guardrail context (contains session info)
+        agent: The agent being run
+        input: Raw user input string
 
     Returns:
         GuardrailFunctionOutput indicating if rate limit was exceeded
@@ -162,8 +172,8 @@ def rate_limit_guardrail(_context, _agent, user_input) -> GuardrailFunctionOutpu
     session_id = None
 
     # Try to get session_id from context
-    if hasattr(_context, "session") and _context.session:
-        session_id = _context.session.session_id
+    if hasattr(context, "session") and context.session:
+        session_id = context.session.session_id
 
     # If no session_id, we can't enforce rate limiting (fail open)
     if not session_id:

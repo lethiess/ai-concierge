@@ -3,35 +3,45 @@
 import logging
 import re
 
-from agents import GuardrailFunctionOutput, input_guardrail
+from agents import (
+    Agent,
+    GuardrailFunctionOutput,
+    RunContextWrapper,
+    TResponseInputItem,
+    input_guardrail,
+)
 
 logger = logging.getLogger(__name__)
 
 
-@input_guardrail(name="input_validation_guardrail")
-def input_validation_guardrail(_context, _agent, user_input) -> GuardrailFunctionOutput:
+@input_guardrail
+async def input_validation_guardrail(
+    context: RunContextWrapper[None],
+    agent: Agent,
+    input: str | list[TResponseInputItem],
+) -> GuardrailFunctionOutput:
     """Validate user input for security and abuse prevention.
 
     Args:
         context: The guardrail context
         agent: The agent being run
-        user_input: User input (can be string or list of messages)
+        input: User input (can be string or list of messages)
 
     Returns:
         GuardrailFunctionOutput indicating if validation passed
     """
     # Extract string content from input (SDK may pass list of messages)
-    if isinstance(user_input, list):
+    if isinstance(input, list):
         # Extract text from message list
         text_parts = []
-        for msg in user_input:
+        for msg in input:
             if isinstance(msg, dict) and "content" in msg:
                 text_parts.append(str(msg["content"]))
             elif hasattr(msg, "content"):
                 text_parts.append(str(msg.content))
         input_text = " ".join(text_parts)
     else:
-        input_text = str(user_input)
+        input_text = str(input)
 
     # Patterns that indicate potential abuse or inappropriate content
     blocked_patterns = [
@@ -83,30 +93,34 @@ def input_validation_guardrail(_context, _agent, user_input) -> GuardrailFunctio
     )
 
 
-@input_guardrail(name="party_size_guardrail")
-def party_size_guardrail(_context, _agent, user_input) -> GuardrailFunctionOutput:
+@input_guardrail
+async def party_size_guardrail(
+    context: RunContextWrapper[None],
+    agent: Agent,
+    input: str | list[TResponseInputItem],
+) -> GuardrailFunctionOutput:
     """Validate party size constraints.
 
     Args:
         context: The guardrail context
         agent: The agent being run
-        user_input: User input (can be string or list of messages)
+        input: User input (can be string or list of messages)
 
     Returns:
         GuardrailFunctionOutput indicating if validation passed
     """
     # Extract string content from input (SDK may pass list of messages)
-    if isinstance(user_input, list):
+    if isinstance(input, list):
         # Extract text from message list
         text_parts = []
-        for msg in user_input:
+        for msg in input:
             if isinstance(msg, dict) and "content" in msg:
                 text_parts.append(str(msg["content"]))
             elif hasattr(msg, "content"):
                 text_parts.append(str(msg.content))
         input_text = " ".join(text_parts)
     else:
-        input_text = str(user_input)
+        input_text = str(input)
 
     # This is a simple check - the actual party size will be extracted by the agent
     # We just check for obviously invalid values mentioned in the text

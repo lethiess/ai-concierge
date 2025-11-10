@@ -3,13 +3,15 @@
 import logging
 import re
 
-from agents import GuardrailFunctionOutput, output_guardrail
+from agents import Agent, GuardrailFunctionOutput, RunContextWrapper, output_guardrail
 
 logger = logging.getLogger(__name__)
 
 
-@output_guardrail(name="output_validation_guardrail")
-def output_validation_guardrail(_context, _agent, output) -> GuardrailFunctionOutput:
+@output_guardrail
+async def output_validation_guardrail(
+    context: RunContextWrapper[None], agent: Agent, output: str
+) -> GuardrailFunctionOutput:
     """Validate agent output for sensitive information.
 
     Args:
@@ -54,8 +56,10 @@ def output_validation_guardrail(_context, _agent, output) -> GuardrailFunctionOu
     )
 
 
-@output_guardrail(name="output_sanitization_guardrail")
-def output_sanitization_guardrail(_context, _agent, output) -> GuardrailFunctionOutput:
+@output_guardrail
+async def output_sanitization_guardrail(
+    context: RunContextWrapper[None], agent: Agent, output: str
+) -> GuardrailFunctionOutput:
     """Sanitize output by masking potential sensitive information.
 
     Args:
