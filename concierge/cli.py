@@ -117,9 +117,21 @@ class ConciergeCLI:
                         else {}
                     )
                     error_msg = error_data.get("error", response.text)
-                    print(
-                        f"\n⚠ Server error (status {response.status_code}): {error_msg}"
-                    )
+                    detail_msg = error_data.get("message", "")
+
+                    # Special handling for guardrail blocks
+                    if error_msg == "Request blocked by guardrail" and detail_msg:
+                        print("\n" + "=" * 70)
+                        print("🚨 REQUEST BLOCKED BY GUARDRAIL")
+                        print("=" * 70)
+                        print(f"{detail_msg}")
+                        print("=" * 70)
+                    else:
+                        print(
+                            f"\n⚠ Server error (status {response.status_code}): {error_msg}"
+                        )
+                        if detail_msg:
+                            print(f"Details: {detail_msg}")
 
         except httpx.TimeoutException:
             logger.exception("Request timed out")

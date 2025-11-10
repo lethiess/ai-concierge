@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager, suppress
 from concierge.config import setup_logging
 import uuid
 import uvicorn
-from agents import Agent, Runner, SQLiteSession
+from agents import Agent, Runner, SQLiteSession, InputGuardrailTripwireTriggered
 from fastapi import (
     FastAPI,
     WebSocket,
@@ -81,20 +81,21 @@ async def lifespan(_app: FastAPI):
     logger.info("✓ Search Agent initialized")
 
     # Tier 1: Orchestrator (routes requests to specialized agents)
+    # Create orchestrator with guardrails (split into input and output)
     orchestrator_instance = OrchestratorAgent(
         reservation_agent=reservation_agent,
         cancellation_agent=cancellation_agent,
         search_agent=search_agent,
+        input_guardrails=[
+            rate_limit_guardrail,  # Rate limiting (5/hour, 20/day)
+            input_validation_guardrail,  # Input validation
+            party_size_guardrail,  # Party size validation
+        ],
+        output_guardrails=[
+            output_validation_guardrail,  # Output validation
+        ],
     )
     orchestrator_agent = orchestrator_instance.create()
-
-    # Add guardrails to the orchestrator
-    orchestrator_agent.guardrails = [
-        rate_limit_guardrail,  # Rate limiting (5/hour, 20/day)
-        input_validation_guardrail,  # Input validation
-        party_size_guardrail,  # Party size validation
-        output_validation_guardrail,  # Output validation
-    ]
 
     # Store agent in app state for dependency injection
     _app.state.orchestrator_agent = orchestrator_agent
@@ -199,9 +200,29 @@ async def process_request(
         # Run the orchestrator using the SDK Runner (async version)
         # Pass session to enable conversation memory across turns
         runner = Runner()
-        result = await runner.run(
-            starting_agent=orchestrator_agent, input=user_input, session=session
-        )
+
+        try:
+            result = await runner.run(
+                starting_agent=orchestrator_agent, input=user_input, session=session
+            )
+        except InputGuardrailTripwireTriggered as e:
+            # Guardrail blocked the request - extract the message
+            logger.warning("⚠️ Request blocked by guardrail")
+            guardrail_message = (
+                str(e.guardrail_result.output.output_info)
+                if hasattr(e, "guardrail_result")
+                else "Request blocked by guardrail"
+            )
+
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "success": False,
+                    "error": "Request blocked by guardrail",
+                    "message": guardrail_message,
+                    "session_id": session_id,
+                },
+            )
 
         # Extract the final output
         final_output = ""

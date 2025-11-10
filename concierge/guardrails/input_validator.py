@@ -3,24 +3,36 @@
 import logging
 import re
 
-from agents import GuardrailFunctionOutput, InputGuardrail
+from agents import GuardrailFunctionOutput, input_guardrail
 
 logger = logging.getLogger(__name__)
 
 
-def input_validation_function(
-    _context, _agent, user_input: str
-) -> GuardrailFunctionOutput:
+@input_guardrail(name="input_validation_guardrail")
+def input_validation_guardrail(_context, _agent, user_input) -> GuardrailFunctionOutput:
     """Validate user input for security and abuse prevention.
 
     Args:
         context: The guardrail context
         agent: The agent being run
-        user_input: Raw user input string
+        user_input: User input (can be string or list of messages)
 
     Returns:
         GuardrailFunctionOutput indicating if validation passed
     """
+    # Extract string content from input (SDK may pass list of messages)
+    if isinstance(user_input, list):
+        # Extract text from message list
+        text_parts = []
+        for msg in user_input:
+            if isinstance(msg, dict) and "content" in msg:
+                text_parts.append(str(msg["content"]))
+            elif hasattr(msg, "content"):
+                text_parts.append(str(msg.content))
+        input_text = " ".join(text_parts)
+    else:
+        input_text = str(user_input)
+
     # Patterns that indicate potential abuse or inappropriate content
     blocked_patterns = [
         r"<script",
@@ -35,26 +47,37 @@ def input_validation_function(
     max_input_length = 1000
 
     # Check for empty input
-    if not user_input or not user_input.strip():
-        logger.warning("Empty input detected")
+    if not input_text or not input_text.strip():
+        logger.warning("=" * 70)
+        logger.warning("🚨 GUARDRAIL TRIGGERED: Input Validation")
+        logger.warning("Reason: Empty input detected")
+        logger.warning("=" * 70)
         return GuardrailFunctionOutput(
             output_info="Input cannot be empty. Please provide a reservation request.",
             tripwire_triggered=True,
         )
 
     # Check input length
-    if len(user_input) > max_input_length:
-        logger.warning(f"Input too long: {len(user_input)} characters")
+    if len(input_text) > max_input_length:
+        logger.warning("=" * 70)
+        logger.warning("🚨 GUARDRAIL TRIGGERED: Input Validation")
+        logger.warning(
+            f"Reason: Input too long ({len(input_text)} chars, max: {max_input_length})"
+        )
+        logger.warning("=" * 70)
         return GuardrailFunctionOutput(
             output_info=f"Input too long (max {max_input_length} characters). Please shorten your request.",
             tripwire_triggered=True,
         )
 
     # Check for suspicious patterns
-    user_input_lower = user_input.lower()
+    input_text_lower = input_text.lower()
     for pattern in blocked_patterns:
-        if re.search(pattern, user_input_lower):
-            logger.warning(f"Blocked pattern detected: {pattern}")
+        if re.search(pattern, input_text_lower):
+            logger.warning("=" * 70)
+            logger.warning("🚨 GUARDRAIL TRIGGERED: Input Validation")
+            logger.warning(f"Reason: Suspicious pattern detected ({pattern})")
+            logger.warning("=" * 70)
             return GuardrailFunctionOutput(
                 output_info="Input contains suspicious content. Please rephrase your request.",
                 tripwire_triggered=True,
@@ -67,33 +90,49 @@ def input_validation_function(
     )
 
 
-def party_size_validation_function(
-    _context, _agent, user_input: str
-) -> GuardrailFunctionOutput:
+@input_guardrail(name="party_size_guardrail")
+def party_size_guardrail(_context, _agent, user_input) -> GuardrailFunctionOutput:
     """Validate party size constraints.
 
     Args:
         context: The guardrail context
         agent: The agent being run
-        user_input: User input string
+        user_input: User input (can be string or list of messages)
 
     Returns:
         GuardrailFunctionOutput indicating if validation passed
     """
+    # Extract string content from input (SDK may pass list of messages)
+    if isinstance(user_input, list):
+        # Extract text from message list
+        text_parts = []
+        for msg in user_input:
+            if isinstance(msg, dict) and "content" in msg:
+                text_parts.append(str(msg["content"]))
+            elif hasattr(msg, "content"):
+                text_parts.append(str(msg.content))
+        input_text = " ".join(text_parts)
+    else:
+        input_text = str(user_input)
+
     # This is a simple check - the actual party size will be extracted by the agent
     # We just check for obviously invalid values mentioned in the text
 
     # Look for numbers in the input
-    numbers = re.findall(r"\b\d+\b", user_input)
+    numbers = re.findall(r"\b\d+\b", input_text)
 
     min_party_size = 1
-    max_party_size = 50
+    max_party_size = 12
 
     for num_str in numbers:
         num = int(num_str)
         # If we find a number that looks like a party size but is invalid
         if num < min_party_size or num > max_party_size:
-            logger.warning(f"Potentially invalid party size detected: {num}")
+            logger.warning("=" * 70)
+            logger.warning("🚨 GUARDRAIL TRIGGERED: Party Size Validation")
+            logger.warning(f"Reason: Invalid party size detected ({num} people)")
+            logger.warning(f"Allowed range: {min_party_size}-{max_party_size} people")
+            logger.warning("=" * 70)
             return GuardrailFunctionOutput(
                 output_info=f"Party size must be between {min_party_size} and {max_party_size} people.",
                 tripwire_triggered=True,
@@ -103,11 +142,3 @@ def party_size_validation_function(
         output_info="Party size validation passed",
         tripwire_triggered=False,
     )
-
-
-# Create the guardrail instances
-input_validation_guardrail = InputGuardrail(
-    guardrail_function=input_validation_function
-)
-
-party_size_guardrail = InputGuardrail(guardrail_function=party_size_validation_function)

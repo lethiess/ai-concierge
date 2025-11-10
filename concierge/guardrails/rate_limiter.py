@@ -5,7 +5,7 @@ import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from agents import GuardrailFunctionOutput, InputGuardrail
+from agents import GuardrailFunctionOutput, input_guardrail
 
 logger = logging.getLogger(__name__)
 
@@ -141,8 +141,8 @@ def cleanup_old_records():
         logger.info(f"Cleaned up {deleted} old rate limit records")
 
 
-@InputGuardrail
-def rate_limit_guardrail(_context, _agent, user_input: str) -> GuardrailFunctionOutput:
+@input_guardrail(name="rate_limit_guardrail")
+def rate_limit_guardrail(_context, _agent, user_input) -> GuardrailFunctionOutput:
     """Rate limiting guardrail to prevent abuse.
 
     Limits:
@@ -179,10 +179,12 @@ def rate_limit_guardrail(_context, _agent, user_input: str) -> GuardrailFunction
     # Check hourly limit
     hourly_count = get_request_count(session_id, hours=1)
     if hourly_count >= HOURLY_LIMIT:
-        logger.warning(
-            f"Rate limit exceeded for session {session_id}: "
-            f"{hourly_count} requests in last hour (limit: {HOURLY_LIMIT})"
-        )
+        logger.warning("=" * 70)
+        logger.warning("🚨 GUARDRAIL TRIGGERED: Rate Limit")
+        logger.warning("Reason: Hourly limit exceeded")
+        logger.warning(f"Session: {session_id}")
+        logger.warning(f"Requests: {hourly_count}/{HOURLY_LIMIT} (last hour)")
+        logger.warning("=" * 70)
         return GuardrailFunctionOutput(
             output_info=f"Rate limit exceeded. You have made {hourly_count} requests in the last hour. "
             f"Please wait before making more requests (limit: {HOURLY_LIMIT} per hour).",
@@ -192,10 +194,12 @@ def rate_limit_guardrail(_context, _agent, user_input: str) -> GuardrailFunction
     # Check daily limit
     daily_count = get_request_count(session_id, hours=24)
     if daily_count >= DAILY_LIMIT:
-        logger.warning(
-            f"Rate limit exceeded for session {session_id}: "
-            f"{daily_count} requests in last 24 hours (limit: {DAILY_LIMIT})"
-        )
+        logger.warning("=" * 70)
+        logger.warning("🚨 GUARDRAIL TRIGGERED: Rate Limit")
+        logger.warning("Reason: Daily limit exceeded")
+        logger.warning(f"Session: {session_id}")
+        logger.warning(f"Requests: {daily_count}/{DAILY_LIMIT} (last 24 hours)")
+        logger.warning("=" * 70)
         return GuardrailFunctionOutput(
             output_info=f"Daily rate limit exceeded. You have made {daily_count} requests in the last 24 hours. "
             f"Please try again tomorrow (limit: {DAILY_LIMIT} per day).",

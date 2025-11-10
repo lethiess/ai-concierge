@@ -31,6 +31,8 @@ class OrchestratorAgent:
         reservation_agent: Agent,
         cancellation_agent: Agent | None = None,
         search_agent: Agent | None = None,
+        input_guardrails: list | None = None,
+        output_guardrails: list | None = None,
     ) -> None:
         """Initialize the orchestrator agent.
 
@@ -38,6 +40,8 @@ class OrchestratorAgent:
             reservation_agent: Agent for handling reservation requests (required)
             cancellation_agent: Agent for handling cancellations (optional)
             search_agent: Agent for restaurant search (optional)
+            input_guardrails: List of input guardrails to apply (optional)
+            output_guardrails: List of output guardrails to apply (optional)
         """
         # Build list of specialized agents
         self.specialized_agents: list[Agent] = [reservation_agent]
@@ -49,6 +53,8 @@ class OrchestratorAgent:
             self.specialized_agents.append(search_agent)
 
         self.config = get_config()
+        self.input_guardrails = input_guardrails or []
+        self.output_guardrails = output_guardrails or []
         self._agent: Agent | None = None
 
         logger.info(
@@ -74,8 +80,13 @@ class OrchestratorAgent:
                 model=self.config.agent_model,
                 instructions=instructions,
                 handoffs=self.specialized_agents,
+                input_guardrails=self.input_guardrails,
+                output_guardrails=self.output_guardrails,
             )
             logger.info("Orchestrator agent created successfully")
+            logger.info(
+                f"  with {len(self.input_guardrails)} input guardrails and {len(self.output_guardrails)} output guardrails"
+            )
 
         return self._agent
 

@@ -3,24 +3,26 @@
 import logging
 import re
 
-from agents import GuardrailFunctionOutput, OutputGuardrail
+from agents import GuardrailFunctionOutput, output_guardrail
 
 logger = logging.getLogger(__name__)
 
 
-def output_validation_function(
-    _context, _agent, output: str
-) -> GuardrailFunctionOutput:
+@output_guardrail(name="output_validation_guardrail")
+def output_validation_guardrail(_context, _agent, output) -> GuardrailFunctionOutput:
     """Validate agent output for sensitive information.
 
     Args:
         context: The guardrail context
         agent: The agent being run
-        output: The output to validate
+        output: The output to validate (can be string or other format)
 
     Returns:
         GuardrailFunctionOutput indicating if validation passed
     """
+    # Convert output to string for checking
+    output_text = str(output) if output else ""
+
     # Patterns that might indicate sensitive information
     sensitive_patterns = [
         (r"\b[A-Z0-9]{20,}\b", "API key or token"),
@@ -34,11 +36,16 @@ def output_validation_function(
     warnings = []
 
     for pattern, description in sensitive_patterns:
-        if re.search(pattern, str(output), re.IGNORECASE):
+        if re.search(pattern, output_text, re.IGNORECASE):
             logger.warning(f"Potential {description} detected in output")
             warnings.append(f"Output may contain {description}")
 
     if warnings:
+        logger.warning("=" * 70)
+        logger.warning("🚨 GUARDRAIL TRIGGERED: Output Validation")
+        logger.warning("Reason: Sensitive information detected")
+        logger.warning(f"Details: {'; '.join(warnings)}")
+        logger.warning("=" * 70)
         return GuardrailFunctionOutput(
             output_info=f"Security warning: {'; '.join(warnings)}. Output blocked.",
             tripwire_triggered=True,
@@ -50,7 +57,8 @@ def output_validation_function(
     )
 
 
-def sanitize_output_function(_context, _agent, output: str) -> GuardrailFunctionOutput:
+@output_guardrail(name="output_sanitization_guardrail")
+def output_sanitization_guardrail(_context, _agent, output) -> GuardrailFunctionOutput:
     """Sanitize output by masking potential sensitive information.
 
     Args:
@@ -77,13 +85,3 @@ def sanitize_output_function(_context, _agent, output: str) -> GuardrailFunction
         output_info="No sanitization needed",
         tripwire_triggered=False,
     )
-
-
-# Create the guardrail instances
-output_validation_guardrail = OutputGuardrail(
-    guardrail_function=output_validation_function
-)
-
-output_sanitization_guardrail = OutputGuardrail(
-    guardrail_function=sanitize_output_function
-)
