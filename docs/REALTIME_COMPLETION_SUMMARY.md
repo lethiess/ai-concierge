@@ -250,7 +250,7 @@ REALTIME_MODEL=gpt-4o-realtime-preview-2024-10-01
 
 **Terminal 1:**
 ```bash
-python -m concierge.server
+python -m concierge.api
 ```
 
 **Terminal 2:**

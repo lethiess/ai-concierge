@@ -71,7 +71,7 @@ wss://ai-concierge.ngrok.dev/media-stream
 
 ```bash
 # Restart server
-python -m concierge.server
+python -m concierge.api
 
 # Make a test call
 python -m concierge.cli

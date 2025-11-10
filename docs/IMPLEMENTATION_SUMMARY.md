@@ -283,7 +283,7 @@ All tests pass with no linting errors.
 
 **Terminal 1 - Server:**
 ```bash
-python -m concierge.server
+python -m concierge.api
 ```
 
 **Terminal 2 - ngrok:**

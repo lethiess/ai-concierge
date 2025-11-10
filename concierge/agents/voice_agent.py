@@ -137,7 +137,7 @@ async def make_reservation_call_via_twilio(
     Note:
         This requires:
         - Twilio account with Media Streams capability
-        - WebSocket server running (concierge.server)
+        - WebSocket server running (concierge.api)
         - PUBLIC_DOMAIN configured for Twilio webhooks
     """
     logger.info(f"Initiating real-time reservation call to {restaurant.name}")

@@ -124,7 +124,7 @@ No need for:
 ### Step 1: Restart Server
 
 ```bash
-python -m concierge.server
+python -m concierge.api
 ```
 
 ### Step 2: Make Test Call

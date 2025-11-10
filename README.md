@@ -162,7 +162,7 @@ For actual phone calls, you need to run both the server and CLI:
 
 **Terminal 1 - Start the WebSocket Server:**
 ```bash
-python -m concierge.server
+python -m concierge.api
 # Or use the helper script:
 bash scripts/start_server.sh
 ```
@@ -283,7 +283,7 @@ For real-time voice calls, you need to run the WebSocket server:
 
 ```bash
 # Start the server
-python -m concierge.server
+python -m concierge.api
 
 # Or use the helper script
 bash scripts/start_server.sh

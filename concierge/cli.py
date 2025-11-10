@@ -143,7 +143,7 @@ class ConciergeCLI:
             logger.exception("Cannot connect to server")
             print(f"\nCannot connect to server at {self.config.server_url}")
             print("Make sure the server is running and the public domain is set.")
-            print("  python -m concierge.server")
+            print("  python -m concierge.api")
         except Exception as e:
             logger.error(f"Unexpected error: {e}", exc_info=True)
             print(f"\nAn unexpected error occurred: {e}")

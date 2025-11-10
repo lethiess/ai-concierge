@@ -103,7 +103,7 @@ ngrok config add-authtoken YOUR_AUTH_TOKEN
 bash scripts/start_server.sh
 
 # Option 2: Run directly
-python -m concierge.server
+python -m concierge.api
 ```
 
 You should see:
@@ -300,7 +300,7 @@ npm install -g @railway/cli
 builder = "nixpacks"
 
 [deploy]
-startCommand = "python -m concierge.server"
+startCommand = "python -m concierge.api"
 ```
 
 3. Deploy:
@@ -346,7 +346,7 @@ The server logs all events:
 
 ```bash
 # Set DEBUG level for verbose logging
-LOG_LEVEL=DEBUG python -m concierge.server
+LOG_LEVEL=DEBUG python -m concierge.api
 ```
 
 ### Common Issues

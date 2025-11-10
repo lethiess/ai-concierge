@@ -122,7 +122,7 @@ If Media Streams is not available or enabled on your account:
 
 I've added enhanced logging. Restart your server:
 ```bash
-python -m concierge.server
+python -m concierge.api
 ```
 
 Make another test call and watch for:

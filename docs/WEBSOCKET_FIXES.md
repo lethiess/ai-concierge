@@ -36,7 +36,7 @@
 
 ### Step 1: Restart Server
 ```bash
-python -m concierge.server
+python -m concierge.api
 ```
 
 ### Step 2: Test /media-stream Endpoint Manually

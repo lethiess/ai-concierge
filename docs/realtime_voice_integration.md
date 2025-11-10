@@ -169,14 +169,14 @@ Key test categories:
 ### Start the Server
 
 ```bash
-python -m concierge.server
+python -m concierge.api
 ```
 
 ### With ngrok
 
 ```bash
 # Terminal 1
-python -m concierge.server
+python -m concierge.api
 
 # Terminal 2
 ngrok http 8080

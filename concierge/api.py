@@ -405,7 +405,7 @@ async def handle_media_stream(websocket: WebSocket):
             await websocket.close(code=1011, reason="Internal error")
 
 
-def run_server():
+def run_api():
     """Run the FastAPI server using uvicorn.
 
     This is the main entry point for the server.
@@ -427,7 +427,7 @@ def run_server():
 
     # Run server
     uvicorn.run(
-        "concierge.server:app",
+        "concierge.api:app",
         host=config.server_host,
         port=config.server_port,
         log_level=config.log_level.lower(),
@@ -436,4 +436,4 @@ def run_server():
 
 
 if __name__ == "__main__":
-    run_server()
+    run_api()
