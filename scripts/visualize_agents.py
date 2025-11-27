@@ -36,7 +36,7 @@ def main():
     from concierge.agents.reservation_agent import ReservationAgent
     from concierge.agents.search_agent import SearchAgent
     from concierge.agents.transcript_agent import TranscriptAnalysisAgent
-    from concierge.agents.voice_agent import ReservationVoiceAgent
+    from concierge.agents.reservation_voice_agent import ReservationVoiceAgent
     from concierge.agents.cancellation_voice_agent import CancellationVoiceAgent
     from concierge.agents.tools import (
         find_restaurant,

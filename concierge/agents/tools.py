@@ -74,7 +74,9 @@ async def initiate_reservation_call(
     logger.info(f"Initiating realtime voice call to {restaurant_name}")
 
     # Import here to avoid circular dependency
-    from concierge.agents.voice_agent import make_reservation_call_via_twilio
+    from concierge.agents.reservation_voice_agent import (
+        make_reservation_call_via_twilio,
+    )
     from concierge.models import Restaurant
 
     # Use concierge name from config if not provided

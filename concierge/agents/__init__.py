@@ -12,7 +12,7 @@ from concierge.agents.transcript_agent import (
     TranscriptAnalysisAgent,
     get_transcript_agent,
 )
-from concierge.agents.voice_agent import (
+from concierge.agents.reservation_voice_agent import (
     ReservationVoiceAgent,
     make_reservation_call_via_twilio,
 )
