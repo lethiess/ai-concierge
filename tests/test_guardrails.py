@@ -2,7 +2,7 @@
 
 from agents import Agent, GuardrailFunctionOutput
 
-from concierge.guardrails import (
+from concierge.agents.guardrails import (
     input_validation_guardrail,
     output_validation_guardrail,
     party_size_guardrail,
