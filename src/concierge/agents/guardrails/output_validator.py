@@ -1,5 +1,3 @@
-"""Output validation guardrails using OpenAI Agents SDK."""
-
 import logging
 import re
 
