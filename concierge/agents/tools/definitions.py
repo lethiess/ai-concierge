@@ -74,7 +74,7 @@ async def initiate_reservation_call(
     logger.info(f"Initiating realtime voice call to {restaurant_name}")
 
     # Import here to avoid circular dependency
-    from concierge.agents.reservation_voice_agent import (
+    from .voice import (
         make_reservation_call_via_twilio,
     )
     from concierge.models import Restaurant
@@ -408,7 +408,7 @@ async def initiate_cancellation_call(
 
     try:
         # Import here to avoid circular imports
-        from concierge.agents.cancellation_voice_agent import CancellationVoiceAgent
+        from .voice import make_cancellation_call_via_twilio
 
         # Create cancellation details dict
         cancellation_details = {
@@ -421,11 +421,8 @@ async def initiate_cancellation_call(
             "customer_name": customer_name or "the customer",
         }
 
-        # Create voice agent for cancellation
-        voice_agent = CancellationVoiceAgent(cancellation_details)
-
         # Make the cancellation call
-        result = await voice_agent.make_cancellation_call()
+        result = await make_cancellation_call_via_twilio(cancellation_details)
 
         logger.info(f"Cancellation call completed: status={result.get('status')}")
         return result

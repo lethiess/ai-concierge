@@ -7,7 +7,7 @@ from datetime import datetime
 from agents import Agent
 
 from concierge.config import get_config
-from concierge.prompts import load_prompt
+from concierge.agents.prompts import load_prompt
 
 logger = logging.getLogger(__name__)
 

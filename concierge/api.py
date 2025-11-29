@@ -34,10 +34,10 @@ from concierge.agents.tools import (
     search_restaurants_llm,
 )
 from concierge.config import get_config
-from concierge.guardrails import (
+from concierge.agents.guardrails import (
     input_validation_guardrail,
-    party_size_guardrail,
     output_validation_guardrail,
+    party_size_guardrail,
 )
 from concierge.services.call_manager import get_call_manager
 
@@ -386,7 +386,7 @@ async def handle_media_stream(websocket: WebSocket):
 
     try:
         # Import TwilioHandler
-        from concierge.twilio_handler import TwilioHandler
+        from concierge.services.twilio_handler import TwilioHandler
 
         # Create handler - it will extract reservation details from 'start' event
         handler = TwilioHandler(websocket)
