@@ -39,7 +39,6 @@ from concierge.agents.guardrails import (
     output_validation_guardrail,
     party_size_guardrail,
 )
-from concierge.services.call_manager import get_call_manager
 
 logger = logging.getLogger(__name__)
 
@@ -295,31 +294,9 @@ async def generate_twiml(call_id: str = Query(..., description="Unique call ID")
             status_code=500,
         )
 
-    # Get reservation details from CallManager to pass as custom parameters
-    call_manager = get_call_manager()
-    call_state = call_manager.get_call(call_id)
-
-    # Prepare custom parameters to send to WebSocket handler
-    # These will be available in the 'start' event
-    custom_params = {"call_id": call_id}  # Always include call_id
-    if call_state:
-        reservation_details = call_state.reservation_details
-        custom_params.update(
-            {
-                "restaurant_name": reservation_details.get("restaurant_name", ""),
-                "party_size": str(reservation_details.get("party_size", "")),
-                "date": reservation_details.get("date", ""),
-                "time": reservation_details.get("time", ""),
-                "customer_name": reservation_details.get("customer_name", ""),
-                "confirmation_number": reservation_details.get(
-                    "confirmation_number", ""
-                ),
-                "call_type": reservation_details.get("call_type", "reservation"),
-            }
-        )
-
     # Build parameter string for TwiML
-    " ".join([f'{k}="{v}"' for k, v in custom_params.items() if v])
+    # Only pass call_id - everything else is retrieved from CallManager
+    custom_params = {"call_id": call_id}
 
     # Use wss:// for secure WebSocket connection
     websocket_url = f"wss://{config.public_domain}/media-stream"
@@ -332,14 +309,7 @@ async def generate_twiml(call_id: str = Query(..., description="Unique call ID")
     <Say>Connecting you to our reservation system.</Say>
     <Connect>
         <Stream url="{websocket_url}" track="inbound_track">
-            <Parameter name="call_id" value="{custom_params.get("call_id", "")}" />
-            <Parameter name="restaurant_name" value="{custom_params.get("restaurant_name", "")}" />
-            <Parameter name="party_size" value="{custom_params.get("party_size", "")}" />
-            <Parameter name="date" value="{custom_params.get("date", "")}" />
-            <Parameter name="time" value="{custom_params.get("time", "")}" />
-            <Parameter name="customer_name" value="{custom_params.get("customer_name", "")}" />
-            <Parameter name="confirmation_number" value="{custom_params.get("confirmation_number", "")}" />
-            <Parameter name="call_type" value="{custom_params.get("call_type", "reservation")}" />
+            <Parameter name="call_id" value="{call_id}" />
         </Stream>
     </Connect>
 </Response>"""

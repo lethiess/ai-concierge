@@ -10,7 +10,7 @@ from concierge.agents.transcript_agent import (
     TranscriptAnalysisAgent,
     get_transcript_agent,
 )
-from concierge.agents.reservation_voice_agent import ReservationVoiceAgent
+from concierge.agents.voice_agent import VoiceAgent
 from concierge.agents.tools.voice import make_reservation_call_via_twilio
 from concierge.models import (
     ConfirmedReservationDetails,
@@ -19,17 +19,10 @@ from concierge.models import (
 )
 
 __all__ = [
-    # Classes
-    "CancellationAgent",
-    "ConfirmedReservationDetails",
     "OrchestratorAgent",
     "ReservationAgent",
-    "ReservationDetails",
-    "ReservationVoiceAgent",
+    "CancellationAgent",
     "SearchAgent",
-    "TranscriptAnalysisAgent",
-    "VoiceCallResult",
-    # Tools
     "find_restaurant",
     # Utilities
     "format_reservation_result",

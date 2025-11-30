@@ -8,8 +8,8 @@ from concierge.agents import (
     CancellationAgent,
     OrchestratorAgent,
     ReservationAgent,
-    ReservationVoiceAgent,
     SearchAgent,
+    VoiceAgent,
     find_restaurant,
 )
 from concierge.agents.tools import (
@@ -192,7 +192,9 @@ class TestAgentCreation:
             "special_requests": "Window seat please",
         }
 
-        voice_agent_instance = ReservationVoiceAgent(reservation_details)
+        voice_agent_instance = VoiceAgent(
+            "reservation_voice_agent", reservation_details
+        )
         voice_agent = voice_agent_instance.create()
 
         assert isinstance(voice_agent, RealtimeAgent)
@@ -212,7 +214,9 @@ class TestAgentCreation:
             "special_requests": "Window seat please",
         }
 
-        voice_agent_instance = ReservationVoiceAgent(reservation_details)
+        voice_agent_instance = VoiceAgent(
+            "reservation_voice_agent", reservation_details
+        )
         voice_agent = voice_agent_instance.create()
 
         assert isinstance(voice_agent, RealtimeAgent)

@@ -21,8 +21,7 @@ from agents.realtime import (
     RealtimeSessionEvent,
 )
 
-from concierge.agents.reservation_voice_agent import ReservationVoiceAgent
-from concierge.agents.cancellation_voice_agent import CancellationVoiceAgent
+from concierge.agents.voice_agent import VoiceAgent
 from concierge.config import get_config
 
 logger = logging.getLogger(__name__)
@@ -42,7 +41,6 @@ class TwilioHandler:
             twilio_websocket: The WebSocket connection from Twilio
         """
         self.twilio_websocket = twilio_websocket
-        self.reservation_details: dict = {}  # Will be populated from 'start' event
         self.call_id: str | None = None  # Will be populated from 'start' event
         self._message_loop_task: asyncio.Task[None] | None = None
         self.session: RealtimeSession | None = None
@@ -77,37 +75,61 @@ class TwilioHandler:
         # Start message loop to get the 'start' event with reservation details
         self._message_loop_task = asyncio.create_task(self._twilio_message_loop())
 
-        # Wait for 'start' event to populate reservation_details
-        logger.info("⏳ Waiting for 'start' event with reservation details...")
+        # Wait for 'start' event to populate call_id
+        logger.info("⏳ Waiting for 'start' event...")
         await self._start_event_received.wait()
 
+        if not self.call_id:
+            logger.error("❌ No call_id received in start event")
+            return
+
+        # Get call details from CallManager
+        from concierge.services.call_manager import get_call_manager
+
+        call_manager = get_call_manager()
+        call_state = call_manager.get_call(self.call_id)
+
+        if not call_state:
+            logger.error(f"❌ Call {self.call_id} not found in CallManager")
+            return
+
+        reservation_details = call_state.reservation_details
+        call_type = reservation_details.get("call_type", "reservation")
+
         logger.info("=" * 70)
-        logger.info("✓ Got reservation details:")
-        logger.info(f"  Restaurant: {self.reservation_details.get('restaurant_name')}")
-        logger.info(f"  Party size: {self.reservation_details.get('party_size')}")
-        logger.info(f"  Date: {self.reservation_details.get('date')}")
-        logger.info(f"  Time: {self.reservation_details.get('time')}")
-        logger.info(
-            f"  Call type: {self.reservation_details.get('call_type', 'reservation')}"
-        )
+        logger.info("✓ Got call details from CallManager:")
+        logger.info(f"  Restaurant: {reservation_details.get('restaurant_name')}")
+        logger.info(f"  Call type: {call_type}")
         logger.info("=" * 70)
 
-        # Create the appropriate voice agent based on call type
-        call_type = self.reservation_details.get("call_type", "reservation")
-        logger.info(f"🔍 Agent Selection: call_type='{call_type}'")
+        # Determine template based on call type
+        template_name = (
+            "cancellation_voice_agent"
+            if call_type == "cancellation"
+            else "reservation_voice_agent"
+        )
+
+        # Prepare context for the agent
+        # We can pass the whole reservation_details dict as context
+        # The VoiceAgent will handle adding current_date
+        context = reservation_details.copy()
+
+        # Handle special requests formatting if needed (though VoiceAgent can do this too,
+        # let's keep it simple here and pass raw data)
+        if context.get("special_requests"):
+            context["special_requests"] = (
+                f"**Special requests:** {context['special_requests']}"
+            )
 
         if call_type == "cancellation":
-            logger.info("✅ SELECTING CancellationVoiceAgent for cancellation call")
-            voice_agent_instance = CancellationVoiceAgent(self.reservation_details)
-            logger.info("✅ CancellationVoiceAgent instance created")
+            logger.info("✅ SELECTING VoiceAgent (cancellation template)")
+            voice_agent_instance = VoiceAgent("cancellation_voice_agent", context)
         else:
-            logger.info(
-                f"✅ SELECTING ReservationVoiceAgent for {call_type} call (default: reservation)"
-            )
-            voice_agent_instance = ReservationVoiceAgent(self.reservation_details)
-            logger.info("✅ ReservationVoiceAgent instance created")
+            logger.info("✅ SELECTING VoiceAgent (reservation template)")
+            voice_agent_instance = VoiceAgent("reservation_voice_agent", context)
 
         agent = voice_agent_instance.create()
+
         logger.info(
             f"✅ Agent created: {type(agent).__name__} (name: {getattr(agent, 'name', 'N/A')})"
         )
@@ -346,67 +368,13 @@ class TwilioHandler:
                 self._stream_sid = start_data.get("streamSid")
                 self._call_sid = start_data.get("callSid")
 
-                # Extract custom parameters (reservation details + call_id)
+                # Extract custom parameters (only call_id needed now)
                 custom_params = start_data.get("customParameters", {})
-
-                # Extract call_id
                 self.call_id = custom_params.get("call_id")
-
-                # Parse party_size safely
-                party_size_str = custom_params.get("party_size", "2")
-                try:
-                    party_size = int(party_size_str) if party_size_str else 2
-                except (ValueError, TypeError):
-                    party_size = 2
-
-                # Get call_type from custom_params, or fallback to CallManager
-                call_type = custom_params.get("call_type", "reservation")
-                logger.info(f"📋 call_type from custom_params: {call_type}")
-
-                # Try to get full details from CallManager (especially important for cancellations)
-                call_state = None
-                if self.call_id:
-                    from concierge.services.call_manager import get_call_manager
-
-                    call_manager = get_call_manager()
-                    call_state = call_manager.get_call(self.call_id)
-
-                    if call_state:
-                        # Get call_type from CallManager if available
-                        if call_state.reservation_details.get("call_type"):
-                            call_type = call_state.reservation_details.get("call_type")
-                            logger.info(
-                                f"✓ Retrieved call_type from CallManager: {call_type}"
-                            )
-
-                # For cancellations, prefer CallManager data over customParams
-                # because cancellation calls have all details already stored
-                if call_type == "cancellation" and call_state:
-                    logger.info(
-                        "✓ Using reservation details from CallManager (cancellation call)"
-                    )
-                    self.reservation_details = call_state.reservation_details.copy()
-                    # Ensure call_type is set
-                    self.reservation_details["call_type"] = "cancellation"
-                else:
-                    # For reservation calls, use customParams (legacy behavior)
-                    self.reservation_details = {
-                        "restaurant_name": custom_params.get("restaurant_name")
-                        or "Unknown Restaurant",
-                        "party_size": party_size,
-                        "date": custom_params.get("date") or "today",
-                        "time": custom_params.get("time") or "7pm",
-                        "customer_name": custom_params.get("customer_name") or "",
-                        "confirmation_number": custom_params.get("confirmation_number")
-                        or "",
-                        "call_type": call_type,
-                    }
 
                 logger.info(
                     f"📞 Stream started - CallID: {self.call_id}, StreamSid: {self._stream_sid}, CallSid: {self._call_sid}"
                 )
-                logger.info(f"📋 Custom parameters received: {custom_params}")
-                logger.info(f"📋 Final call_type in reservation_details: {call_type}")
 
                 # Update CallManager status to in_progress
                 if self.call_id:
