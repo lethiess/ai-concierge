@@ -6,14 +6,14 @@ on:
     types: [opened, synchronize, reopened]
 
 jobs:
-  lint_and_test:
-    name: Lint and Test
+  lint_test_and_sonarcloud:
+    name: Lint, Test and SonarCloud Scan
     runs-on: ubuntu-latest
     
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
+          fetch-depth: 0  
           
       - name: Install uv
         uses: astral-sh/setup-uv@v5
@@ -35,9 +35,8 @@ jobs:
           OPENAI_API_KEY: "dummy_key_for_tests"
         run: |
           uv run pytest --cov=src --cov-report=xml:coverage.xml --junitxml=test-results.xml
-          
+      
       - name: SonarCloud Scan
         uses: SonarSource/sonarcloud-github-action@master
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
