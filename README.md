@@ -68,11 +68,14 @@ python -m concierge.api
 ```bash
 # Install ngrok if you haven't: https://ngrok.com/download
 ngrok http 8080
+
+# or use with custom domain
+ngrok http --url=your.ngrok.url.io 8080
 ```
 
 Copy the ngrok domain (e.g., `abc123.ngrok.io`) and add it to your `.env`:
 ```bash
-PUBLIC_DOMAIN=abc123.ngrok.io
+PUBLIC_DOMAIN=your.ngrok.url.io
 ```
 
 Restart the server to pick up the new configuration.
@@ -106,13 +109,6 @@ Your request: Cancel my reservation
 
 ## Development
 
-### Visualize Agents
-
-```bash
-python scripts/visualize_agents.py
-```
-
-This generates a visual graph showing agents (yellow), tools (green), and handoffs (arrows).
 
 ### Run Tests
 
@@ -162,18 +158,6 @@ Book a table at Luigi's Pizza for 4 people tomorrow at 7 pm
 ```
 
 **Expected:** Request processed successfully.
-
-## Architecture
-
-```
-User → Orchestrator Agent → [Reservation/Cancellation/Search Agent]
-                                        ↓
-                                  Voice Call (Twilio + OpenAI)
-                                        ↓
-                                   Restaurant
-```
-
-See [docs/agent_flow.md](docs/agent_flow.md) and [docs/twilio_realtime_flow.md](docs/twilio_realtime_flow.md) for detailed diagrams.
 
 ## Resources
 
