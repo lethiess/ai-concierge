@@ -31,6 +31,8 @@ jobs:
         run: uv run ruff format --check .
         
       - name: Run Tests with Coverage
+        env:
+          OPENAI_API_KEY: "dummy_key_for_tests"
         run: |
           uv run pytest --cov=src --cov-report=xml:coverage.xml --junitxml=test-results.xml
           
