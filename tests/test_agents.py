@@ -260,7 +260,7 @@ class TestTools:
         restaurant = service.find_restaurant("Lugis Pizza")
 
         assert restaurant is not None
-        assert restaurant.name == "Lugis Pizza"
+        assert restaurant.name == service.config.demo_restaurant_name
 
     def test_find_restaurant_not_found(self):
         """Test finding a restaurant that doesn't exist."""

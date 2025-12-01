@@ -6,8 +6,8 @@ on:
     types: [opened, synchronize, reopened]
 
 jobs:
-  build:
-    name: Build, Test and Analyze
+  lint_and_test:
+    name: Lint and Test
     runs-on: ubuntu-latest
     
     steps:
