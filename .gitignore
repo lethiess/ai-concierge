@@ -58,3 +58,7 @@ Thumbs.db
 *.db
 *.db-shm
 *.db-wal
+
+# Test results
+test-results.xml
+coverage.xml

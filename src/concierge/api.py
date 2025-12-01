@@ -296,7 +296,6 @@ async def generate_twiml(call_id: str = Query(..., description="Unique call ID")
 
     # Build parameter string for TwiML
     # Only pass call_id - everything else is retrieved from CallManager
-    custom_params = {"call_id": call_id}
 
     # Use wss:// for secure WebSocket connection
     websocket_url = f"wss://{config.public_domain}/media-stream"

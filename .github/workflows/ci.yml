@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push: # Trigger on push to any branch
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  build:
+    name: Build, Test and Analyze
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
+          
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        
+      - name: Set up Python
+        run: uv python install 3.13
+        
+      - name: Install dependencies
+        run: uv sync --extra dev
+        
+      - name: Run Ruff (Lint)
+        run: uv run ruff check .
+        
+      - name: Run Ruff (Format Check)
+        run: uv run ruff format --check .
+        
+      - name: Run Tests with Coverage
+        run: |
+          uv run pytest --cov=src --cov-report=xml:coverage.xml --junitxml=test-results.xml
+          
+ #     - name: SonarCloud Scan
+ #       uses: SonarSource/sonarcloud-github-action@master
+ #       env:
+ #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Needed to get PR information, if any
+ #         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

@@ -102,13 +102,6 @@ class TwilioHandler:
         logger.info(f"  Call type: {call_type}")
         logger.info("=" * 70)
 
-        # Determine template based on call type
-        template_name = (
-            "cancellation_voice_agent"
-            if call_type == "cancellation"
-            else "reservation_voice_agent"
-        )
-
         # Prepare context for the agent
         # We can pass the whole reservation_details dict as context
         # The VoiceAgent will handle adding current_date
@@ -121,6 +114,7 @@ class TwilioHandler:
                 f"**Special requests:** {context['special_requests']}"
             )
 
+        # Determine template based on call type
         if call_type == "cancellation":
             logger.info("✅ SELECTING VoiceAgent (cancellation template)")
             voice_agent_instance = VoiceAgent("cancellation_voice_agent", context)

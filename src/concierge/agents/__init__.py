@@ -19,12 +19,16 @@ from concierge.models import (
 )
 
 __all__ = [
+    "CancellationAgent",
+    "ConfirmedReservationDetails",
     "OrchestratorAgent",
     "ReservationAgent",
-    "CancellationAgent",
+    "ReservationDetails",
     "SearchAgent",
+    "TranscriptAnalysisAgent",
+    "VoiceAgent",
+    "VoiceCallResult",
     "find_restaurant",
-    # Utilities
     "format_reservation_result",
     "get_transcript_agent",
     "initiate_reservation_call",
