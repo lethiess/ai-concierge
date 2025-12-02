@@ -17,7 +17,7 @@ from pathlib import Path
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
+sys.path.insert(0, str(project_root / "src"))
 
 
 def main():
@@ -36,8 +36,6 @@ def main():
     from concierge.agents.reservation_agent import ReservationAgent
     from concierge.agents.search_agent import SearchAgent
     from concierge.agents.transcript_agent import TranscriptAnalysisAgent
-    from concierge.agents.reservation_voice_agent import ReservationVoiceAgent
-    from concierge.agents.cancellation_voice_agent import CancellationVoiceAgent
     from concierge.agents.tools import (
         find_restaurant,
         initiate_cancellation_call,
@@ -45,7 +43,7 @@ def main():
         lookup_reservation_from_history,
         search_restaurants_llm,
     )
-    from concierge.guardrails import (
+    from concierge.agents.guardrails import (
         input_validation_guardrail,
         output_validation_guardrail,
         party_size_guardrail,
@@ -84,7 +82,11 @@ def main():
 
     # Create transcript agent
     transcript_agent_instance = TranscriptAnalysisAgent()
-    transcript_agent = transcript_agent_instance.create()
+    transcript_agent_instance.create()
+
+    from concierge.agents.voice_agent import VoiceAgent
+
+    # ... (rest of imports)
 
     # Create voice agents (RealtimeAgent instances)
     # These need sample data to create
@@ -95,29 +97,67 @@ def main():
         "date": "tomorrow",
         "time": "7pm",
         "customer_name": "Demo Customer",
+        "special_requests": "None",
+        "confirmation_number": "12345",
     }
 
-    reservation_voice_agent_instance = ReservationVoiceAgent(sample_reservation_details)
+    reservation_voice_agent_instance = VoiceAgent(
+        "reservation_voice_agent", sample_reservation_details
+    )
     reservation_voice_agent = reservation_voice_agent_instance.create()
 
-    cancellation_voice_agent_instance = CancellationVoiceAgent(
-        sample_reservation_details
+    cancellation_voice_agent_instance = VoiceAgent(
+        "cancellation_voice_agent", sample_reservation_details
     )
     cancellation_voice_agent = cancellation_voice_agent_instance.create()
 
     print("Generating visualizations...")
 
-    # Graph 1: Main agent architecture (Orchestrator and handoffs)
-    print("\n1. Generating main agent architecture graph...")
-    main_output_path = project_root / "docs" / "agent_visualization"
-    main_graph = draw_graph(orchestrator, filename=str(main_output_path))
-    print(f"   ✓ Saved to: {main_output_path}.png")
+    # Graph 1: Main Architecture (Orchestrator)
+    print("\n1. Generating main architecture graph (Orchestrator)...")
+    orchestrator_output_path = (
+        project_root / "docs" / "orchestrator_agent_visualization"
+    )
+    try:
+        draw_graph(orchestrator, filename=str(orchestrator_output_path))
+        print(f"   ✓ Saved to: {orchestrator_output_path}.png")
+    except Exception as e:
+        print(f"   ⚠ Could not visualize orchestrator agent: {e}")
+
+    # Graph 1b: Reservation Agent
+    print("\n1b. Generating reservation agent graph...")
+    reservation_output_path = project_root / "docs" / "reservation_agent_visualization"
+    try:
+        draw_graph(reservation_agent, filename=str(reservation_output_path))
+        print(f"   ✓ Saved to: {reservation_output_path}.png")
+    except Exception as e:
+        print(f"   ⚠ Could not visualize reservation agent: {e}")
+
+    # Graph 1c: Cancellation Agent
+    print("\n1c. Generating cancellation agent graph...")
+    cancellation_output_path = (
+        project_root / "docs" / "cancellation_agent_visualization"
+    )
+    try:
+        draw_graph(cancellation_agent, filename=str(cancellation_output_path))
+        print(f"   ✓ Saved to: {cancellation_output_path}.png")
+    except Exception as e:
+        print(f"   ⚠ Could not visualize cancellation agent: {e}")
+
+    # Graph 1d: Search Agent
+    print("\n1d. Generating search agent graph...")
+    search_output_path = project_root / "docs" / "search_agent_visualization"
+    try:
+        draw_graph(search_agent, filename=str(search_output_path))
+        print(f"   ✓ Saved to: {search_output_path}.png")
+    except Exception as e:
+        print(f"   ⚠ Could not visualize search agent: {e}")
 
     # Graph 2: Transcript Analysis Agent
     print("\n2. Generating transcript agent graph...")
     transcript_output_path = project_root / "docs" / "transcript_agent_visualization"
     try:
-        draw_graph(transcript_agent, filename=str(transcript_output_path))
+        draw_graph(transcript_agent_instance, filename=str(transcript_output_path))
         print(f"   ✓ Saved to: {transcript_output_path}.png")
     except Exception as e:
         print(f"   ⚠ Could not visualize transcript agent: {e}")
@@ -158,18 +198,15 @@ def main():
     print("  - __start__ node: Entry point")
     print("  - __end__ node: Exit point")
     print("\nGenerated graphs:")
-    print(f"  1. Main architecture: {main_output_path}.png")
+
+    # Summary of generated graphs
+    print(f"  1. Orchestrator agent: {orchestrator_output_path}.png")
+    print(f"  1b. Reservation agent: {reservation_output_path}.png")
+    print(f"  1c. Cancellation agent: {cancellation_output_path}.png")
+    print(f"  1d. Search agent: {search_output_path}.png")
     print(f"  2. Transcript agent: {transcript_output_path}.png")
     print(f"  3. Reservation voice agent: {reservation_voice_output_path}.png")
     print(f"  4. Cancellation voice agent: {cancellation_voice_output_path}.png")
-
-    # Try to open the main graph
-    try:
-        main_graph.view()
-        print("\n✓ Opening main visualization in default viewer...")
-    except Exception as e:
-        print(f"\nNote: Could not auto-open image: {e}")
-        print(f"Please open {main_output_path}.png manually")
 
 
 if __name__ == "__main__":
