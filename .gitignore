@@ -62,3 +62,13 @@ Thumbs.db
 # Test results
 test-results.xml
 coverage.xml
+
+# Images
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.svg
+*.ico
+
