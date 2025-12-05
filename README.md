@@ -12,8 +12,8 @@ The system uses 3 specialized agents (Reservation, Cancellation, Search) orchest
 
 - Python 3.13+
 - OpenAI API key
-- (Optional) Twilio account for real calls
-- (Optional) ngrok for local development with Twilio webhooks
+- Twilio account for real calls
+- ngrok for local development with Twilio webhooks
 
 ### Setup
 
@@ -46,16 +46,6 @@ cp .env.example .env
 - `PUBLIC_DOMAIN` - Your ngrok domain (see ngrok setup below)
 
 ## Running the System
-
-### Simulation Mode (No Twilio Required)
-
-```bash
-python -m concierge
-```
-
-This will simulate calls without making real phone calls.
-
-### Full Mode (With Real Calls)
 
 For actual phone calls, you need to run both the server and CLI:
 
